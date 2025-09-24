@@ -1,4 +1,3 @@
-// src/main/java/com/rspc/timetable/services/TimetableChangeService.java
 package com.rspc.timetable.services;
 
 import com.rspc.timetable.dto.ChangeType;
@@ -39,49 +38,51 @@ public class TimetableChangeService {
 
     @Transactional
     public List<Timetable> applyChange(TimetableChangeRequest req) {
-        if (req.getType() == ChangeType.TEMPORARY) {
-            return applyTemporary(req);
-        } else {
-            return applyPermanent(req);
-        }
+        return (req.getType() == ChangeType.TEMPORARY) ? applyTemporary(req) : applyPermanent(req);
     }
 
-    // Temporary = write dated override rows, keep base untouched
+    // Temporary = write dated override rows, keep base unchanged
+    @Transactional
     private List<Timetable> applyTemporary(TimetableChangeRequest req) {
         LocalDate from = Objects.requireNonNull(req.getDateFrom(), "dateFrom required for TEMPORARY");
-        LocalDate to = req.getDateTo() != null ? req.getDateTo() : from;
+        LocalDate to = (req.getDateTo() != null) ? req.getDateTo() : from;
 
-        // Start from base rows for the division
+        // Base rows: override* must be null
         List<Timetable> base = timetableRepo.findByDivision_IdAndOverrideStartDateIsNull(req.getDivisionId());
 
-        // Filter by constraints (subject, fromTeacher, specific slots)
         if (req.getSubjectId() != null) {
-            base = base.stream().filter(t -> t.getSubject() != null && Objects.equals(t.getSubject().getId(), req.getSubjectId())).collect(Collectors.toList());
+            base = base.stream()
+                    .filter(t -> t.getSubject() != null && Objects.equals(t.getSubject().getId(), req.getSubjectId()))
+                    .collect(Collectors.toList());
         }
         if (req.getFromTeacherId() != null) {
-            base = base.stream().filter(t -> t.getTeacher() != null && Objects.equals(t.getTeacher().getId(), req.getFromTeacherId())).collect(Collectors.toList());
+            base = base.stream()
+                    .filter(t -> t.getTeacher() != null && Objects.equals(t.getTeacher().getId(), req.getFromTeacherId()))
+                    .collect(Collectors.toList());
         }
         if (req.getTimeSlotIds() != null && !req.getTimeSlotIds().isEmpty()) {
             Set<Long> slotSet = new HashSet<>(req.getTimeSlotIds());
-            base = base.stream().filter(t -> t.getTimeSlot() != null && slotSet.contains(t.getTimeSlot().getId())).collect(Collectors.toList());
+            base = base.stream()
+                    .filter(t -> t.getTimeSlot() != null && slotSet.contains(t.getTimeSlot().getId()))
+                    .collect(Collectors.toList());
         }
 
-        // Resolve targets (toTeacher/classroom) if provided
-        Teacher toTeacher = req.getToTeacherId() != null ? teacherRepo.findById(req.getToTeacherId()).orElse(null) : null;
-        Classroom toClassroom = req.getClassroomId() != null ? classroomRepo.findById(req.getClassroomId()).orElse(null) : null;
+        Teacher toTeacher = (req.getToTeacherId() != null)
+                ? teacherRepo.findById(req.getToTeacherId()).orElse(null) : null;
+        Classroom toClassroom = (req.getClassroomId() != null)
+                ? classroomRepo.findById(req.getClassroomId()).orElse(null) : null;
 
-        // Clone each selected base row into an override for the date range
         List<Timetable> overrides = new ArrayList<>();
         for (Timetable b : base) {
             Timetable o = new Timetable(
                     b.getDivision(),
                     b.getSubject(),
-                    toTeacher != null ? toTeacher : b.getTeacher(),
-                    toClassroom != null ? toClassroom : b.getClassroom(),
+                    (toTeacher != null ? toTeacher : b.getTeacher()),
+                    (toClassroom != null ? toClassroom : b.getClassroom()),
                     b.getTimeSlot(),
-                    true,                      // override flag
-                    b.isElective(),            // keep elective flag
-                    b.getElectiveGroup(),      // keep group if any
+                    true,                 // isOverride
+                    b.isElective(),       // copy elective flag
+                    b.getElectiveGroup(), // copy elective group (String)
                     from,
                     to
             );
@@ -93,28 +94,33 @@ public class TimetableChangeService {
     // Permanent = edit base rows (override* must stay null)
     @Transactional
     private List<Timetable> applyPermanent(TimetableChangeRequest req) {
-        // Pick the base rows we intend to modify
         List<Timetable> base = timetableRepo.findByDivision_IdAndOverrideStartDateIsNull(req.getDivisionId());
 
         if (req.getSubjectId() != null) {
-            base = base.stream().filter(t -> t.getSubject() != null && Objects.equals(t.getSubject().getId(), req.getSubjectId())).collect(Collectors.toList());
+            base = base.stream()
+                    .filter(t -> t.getSubject() != null && Objects.equals(t.getSubject().getId(), req.getSubjectId()))
+                    .collect(Collectors.toList());
         }
         if (req.getFromTeacherId() != null) {
-            base = base.stream().filter(t -> t.getTeacher() != null && Objects.equals(t.getTeacher().getId(), req.getFromTeacherId())).collect(Collectors.toList());
+            base = base.stream()
+                    .filter(t -> t.getTeacher() != null && Objects.equals(t.getTeacher().getId(), req.getFromTeacherId()))
+                    .collect(Collectors.toList());
         }
         if (req.getTimeSlotIds() != null && !req.getTimeSlotIds().isEmpty()) {
             Set<Long> slotSet = new HashSet<>(req.getTimeSlotIds());
-            base = base.stream().filter(t -> t.getTimeSlot() != null && slotSet.contains(t.getTimeSlot().getId())).collect(Collectors.toList());
+            base = base.stream()
+                    .filter(t -> t.getTimeSlot() != null && slotSet.contains(t.getTimeSlot().getId()))
+                    .collect(Collectors.toList());
         }
 
-        // Resolve new assignments
-        Teacher toTeacher = req.getToTeacherId() != null ? teacherRepo.findById(req.getToTeacherId()).orElse(null) : null;
-        Classroom toClassroom = req.getClassroomId() != null ? classroomRepo.findById(req.getClassroomId()).orElse(null) : null;
+        Teacher toTeacher = (req.getToTeacherId() != null)
+                ? teacherRepo.findById(req.getToTeacherId()).orElse(null) : null;
+        Classroom toClassroom = (req.getClassroomId() != null)
+                ? classroomRepo.findById(req.getClassroomId()).orElse(null) : null;
 
         for (Timetable t : base) {
             if (toTeacher != null) t.setTeacher(toTeacher);
             if (toClassroom != null) t.setClassroom(toClassroom);
-            // keep override fields null to remain as base timetable
             t.setOverrideStartDate(null);
             t.setOverrideEndDate(null);
         }

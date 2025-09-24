@@ -1,53 +1,34 @@
+// src/main/java/com/rspc/timetable/controllers/TimetableController.java
 package com.rspc.timetable.controllers;
 
-import com.rspc.timetable.entities.Timetable;
+import com.rspc.timetable.services.TimetableGeneratorService;
 import com.rspc.timetable.services.TimetableService;
+import com.rspc.timetable.entities.Timetable;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDate;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/timetables")
+@RequestMapping("/api/timetable")
 public class TimetableController {
 
+    private final TimetableGeneratorService generatorService;
     private final TimetableService timetableService;
 
-    public TimetableController(TimetableService timetableService) {
+    public TimetableController(TimetableGeneratorService generatorService,
+                               TimetableService timetableService) {
+        this.generatorService = generatorService;
         this.timetableService = timetableService;
     }
 
-    @PostMapping
-    public Timetable createTimetable(@RequestBody Timetable timetable) {
-        return timetableService.saveTimetable(timetable);
-    }
-
-    @PostMapping("/bulk")
-    public List<Timetable> createBulkTimetables(@RequestBody List<Timetable> timetables) {
-        return timetableService.saveBulk(timetables);
+    @PostMapping("/generate")
+    public String generate() {
+        // Note: method name is generateCompleteTimetable()
+        return generatorService.generateCompleteTimetable();
     }
 
     @GetMapping
-    public List<Timetable> getAllTimetables() {
+    public List<Timetable> all() {
         return timetableService.getAllTimetables();
-    }
-
-    @GetMapping("/{id}")
-    public Timetable getTimetableById(@PathVariable Long id) {
-        return timetableService.getById(id);
-    }
-
-    @DeleteMapping("/{id}")
-    public void deleteTimetable(@PathVariable Long id) {
-        timetableService.delete(id);
-    }
-
-    @GetMapping("/division/{divisionId}/date/{date}")
-    public List<Timetable> getTimetableForDivisionOnDate(
-            @PathVariable Long divisionId,
-            @PathVariable String date
-    ) {
-        LocalDate localDate = LocalDate.parse(date);
-        return timetableService.getTimetableForDivisionOnDate(divisionId, localDate);
     }
 }

@@ -1,76 +1,77 @@
+// src/main/java/com/rspc/timetable/services/SubjectService.java
 package com.rspc.timetable.services;
 
 import com.rspc.timetable.dto.SubjectDTO;
-import com.rspc.timetable.entities.Semester;
-import com.rspc.timetable.entities.Subject;
-import com.rspc.timetable.entities.SubjectCategory;
-import com.rspc.timetable.entities.Year;
-import com.rspc.timetable.repositories.SemesterRepository;
+import com.rspc.timetable.entities.*;
 import com.rspc.timetable.repositories.SubjectRepository;
-import com.rspc.timetable.repositories.YearRepository;
+import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import java.util.List;
+
+import java.util.*;
 import java.util.stream.Collectors;
-import com.rspc.timetable.dto.SubjectDTO;
+
 @Service
+@RequiredArgsConstructor
 public class SubjectService {
 
     private final SubjectRepository subjectRepository;
-    private final SemesterRepository semesterRepository;
-    private final YearRepository yearRepository;
-
-    public SubjectService(SubjectRepository subjectRepository,
-                          SemesterRepository semesterRepository,
-                          YearRepository yearRepository) {
-        this.subjectRepository = subjectRepository;
-        this.semesterRepository = semesterRepository;
-        this.yearRepository = yearRepository;
-    }
-
-    public Subject saveSubject(SubjectDTO dto) {
-        Semester semester = semesterRepository.findById(dto.getSemester_id())
-                .orElseThrow(() -> new RuntimeException("Semester not found: " + dto.getSemester_id()));
-        Year year = yearRepository.findById(dto.getYear_id())
-                .orElseThrow(() -> new RuntimeException("Year not found: " + dto.getYear_id()));
-
-        Subject subject = new Subject();
-        subject.setName(dto.getName());
-        subject.setType(dto.getType());
-        subject.setCredits(dto.getCredits());
-        subject.setCategory(SubjectCategory.valueOf(dto.getCategory().toUpperCase()));
-        subject.setSemester(semester);
-        subject.setYear(year);
-
-        return subjectRepository.save(subject);
-    }
-
-    public List<Subject> saveAllSubjects(List<SubjectDTO> dtos) {
-        return dtos.stream()
-                .map(this::saveSubject)
-                .collect(Collectors.toList());
-    }
+    private final YearService yearService;
+    private final SemesterService semesterService;
 
     public List<Subject> getAllSubjects() {
         return subjectRepository.findAll();
     }
 
-    // ✅ Add this so your TimetableController doesn’t break
-    public Subject getSubjectById(Long id) {
-        return subjectRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Subject not found: " + id));
+    @Transactional
+    public List<Subject> createOrUpdateBulk(List<SubjectDTO> dtos) {
+        Set<Long> yearIds = dtos.stream().map(SubjectDTO::getYearId).collect(Collectors.toSet());
+        Set<Long> semIds  = dtos.stream().map(SubjectDTO::getSemesterId).collect(Collectors.toSet());
+
+        Map<Long, Year> years = yearService.findAllByIds(yearIds).stream()
+                .collect(Collectors.toMap(Year::getId, y -> y));
+        Map<Long, Semester> sems = semesterService.findAllByIds(semIds).stream()
+                .collect(Collectors.toMap(Semester::getId, s -> s));
+
+        List<Subject> batch = new ArrayList<>(dtos.size());
+        for (SubjectDTO d : dtos) {
+            Subject s = subjectRepository.findByCode(d.getCode()).orElseGet(Subject::new);
+            s.setCode(d.getCode());
+            s.setName(d.getName());
+
+            // Convert type string -> enum
+            try {
+                s.setType(SubjectType.valueOf(d.getType().toUpperCase()));
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Invalid SubjectType: " + d.getType());
+            }
+
+            s.setCredits(d.getCredits());
+
+            // Convert category string -> enum
+            try {
+                s.setCategory(SubjectCategory.valueOf(d.getCategory().toUpperCase()));
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Invalid SubjectCategory: " + d.getCategory());
+            }
+
+            Year y = years.get(d.getYearId());
+            if (y == null) throw new IllegalArgumentException("Invalid yearId: " + d.getYearId());
+            s.setYear(y);
+
+            Semester sem = sems.get(d.getSemesterId());
+            if (sem == null) throw new IllegalArgumentException("Invalid semesterId: " + d.getSemesterId());
+            s.setSemester(sem);
+
+            batch.add(s);
+        }
+        return subjectRepository.saveAll(batch);
     }
 
-    public List<SubjectDTO> getAllSubjectDTOs() {
-    return subjectRepository.findAll().stream()
-        .map(s -> SubjectDTO.builder()
-            .id(s.getId())
-            .name(s.getName())
-            .type(s.getType())
-            .credits(s.getCredits())
-            .category(s.getCategory() != null ? s.getCategory().name() : null)
-            .year_id(s.getYear() != null ? s.getYear().getId() : null)
-            .semester_id(s.getSemester() != null ? s.getSemester().getId() : null)
-            .build())
-        .collect(Collectors.toList());
-}
+    public Subject updateCredits(Long id, Integer credits) {
+        Subject s = subjectRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Subject not found: " + id));
+        s.setCredits(credits);
+        return subjectRepository.save(s);
+    }
 }

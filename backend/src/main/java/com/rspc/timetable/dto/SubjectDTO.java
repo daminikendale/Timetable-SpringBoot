@@ -1,18 +1,15 @@
+// src/main/java/com/rspc/timetable/dto/SubjectDTO.java
 package com.rspc.timetable.dto;
 
-import lombok.*;
+import lombok.Data;
 
-@Getter
-@Setter
-@NoArgsConstructor  // ✅ fixes the default constructor issue
-@AllArgsConstructor
-@Builder
+@Data
 public class SubjectDTO {
-    private Long id;
+    private String code;
     private String name;
-    private String type;     // THEORY or LAB
-    private int credits;
-    private String category; // REGULAR, PROGRAM_ELECTIVE, OPEN_ELECTIVE
-    private Long year_id;
-    private Long semester_id;
+    private String type;       // string from JSON ("THEORY", "LAB", etc.)
+    private Integer credits;
+    private String category;   // string from JSON ("REGULAR", "PROGRAM_ELECTIVE", etc.)
+    private Long yearId;
+    private Long semesterId;
 }

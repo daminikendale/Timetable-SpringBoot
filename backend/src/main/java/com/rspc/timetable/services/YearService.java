@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import com.rspc.timetable.dto.YearDTO;
 import java.util.stream.Collectors;
 import java.util.List;
+import java.util.Set;
 import java.util.Optional;
 
 @Service
@@ -43,5 +44,10 @@ public class YearService {
                 .map(y -> new YearDTO(y.getId(), y.getYearNumber()))
                 .collect(Collectors.toList());
     }
+
+    public List<Year> findAllByIds(Set<Long> ids) {
+    // If you already have a repository, delegate.
+    return yearRepository.findAllById(ids);
+}
 
 }

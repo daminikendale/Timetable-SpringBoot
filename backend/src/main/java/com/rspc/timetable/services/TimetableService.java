@@ -85,14 +85,13 @@ public class TimetableService {
         return result;
     }
 
-    // --- Allocate subject hours ---
+    // --- Allocate subject hours (simple filler using credits) ---
     public void allocateSubjectHours(Division division, Subject subject, Teacher teacher, Classroom classroom) {
         int hours = subject.getCredits();
         List<TimeSlot> availableSlots = timeSlotService.getAllTimeSlots();
-
         boolean isElective = subject.getCategory() != SubjectCategory.REGULAR;
 
-        for (int i = 0; i < hours; i++) {
+        for (int i = 0; i < hours && i < availableSlots.size(); i++) {
             TimeSlot slot = availableSlots.get(i);
             Timetable tt = new Timetable(
                     division,
@@ -100,9 +99,11 @@ public class TimetableService {
                     teacher,
                     classroom,
                     slot,
-                    false,           // override flag
-                    isElective,      // elective flag
-                    null, null, null // electiveGroup, overrideStartDate, overrideEndDate
+                    false,             // isOverride
+                    isElective,        // isElective
+                    null,              // electiveGroup
+                    null,              // overrideStartDate
+                    null               // overrideEndDate
             );
             timetableRepository.save(tt);
         }

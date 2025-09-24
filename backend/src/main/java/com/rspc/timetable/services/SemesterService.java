@@ -3,7 +3,7 @@ package com.rspc.timetable.services;
 import com.rspc.timetable.entities.Semester;
 import com.rspc.timetable.repositories.SemesterRepository;
 import org.springframework.stereotype.Service;
-
+import java.util.Set;
 import java.util.List;
 import java.util.Optional;
 import com.rspc.timetable.dto.SemesterDTO;
@@ -32,4 +32,8 @@ public class SemesterService {
     public Semester saveSemester(Semester semester) { return semesterRepository.save(semester); }
     public List<Semester> saveSemesters(List<Semester> semesters) { return semesterRepository.saveAll(semesters); }
     public void deleteSemester(Long id) { semesterRepository.deleteById(id); }
+
+    public List<Semester> findAllByIds(Set<Long> ids) {
+    return semesterRepository.findAllById(ids);
+}
 }

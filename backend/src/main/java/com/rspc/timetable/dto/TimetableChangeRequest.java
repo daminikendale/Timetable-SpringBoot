@@ -6,19 +6,17 @@ import java.util.List;
 
 public class TimetableChangeRequest {
     private ChangeType type;
+    private Long divisionId;
 
-    private Long divisionId;            // required
-    private LocalDate dateFrom;         // required for TEMPORARY
-    private LocalDate dateTo;           // optional; if null, equals dateFrom
+    private Long subjectId;        // optional filter
+    private Long fromTeacherId;    // optional filter
+    private List<Long> timeSlotIds;// optional filter
 
-    private Long subjectId;             // optional filter
-    private Long fromTeacherId;         // optional filter for TEMPORARY replace
-    private Long toTeacherId;           // target teacher for both kinds
-    private Long classroomId;           // optional target classroom
-    private List<Long> timeSlotIds;     // optional subset of slots; null = all  
+    private Long toTeacherId;      // target teacher (optional)
+    private Long classroomId;      // target classroom (optional)
 
-
-    
+    private LocalDate dateFrom;    // required for TEMPORARY
+    private LocalDate dateTo;      // optional for TEMPORARY
     public ChangeType getType() {
         return type;
     }
@@ -30,18 +28,6 @@ public class TimetableChangeRequest {
     }
     public void setDivisionId(Long divisionId) {
         this.divisionId = divisionId;
-    }
-    public LocalDate getDateFrom() {
-        return dateFrom;
-    }
-    public void setDateFrom(LocalDate dateFrom) {
-        this.dateFrom = dateFrom;
-    }
-    public LocalDate getDateTo() {
-        return dateTo;
-    }
-    public void setDateTo(LocalDate dateTo) {
-        this.dateTo = dateTo;
     }
     public Long getSubjectId() {
         return subjectId;
@@ -55,6 +41,12 @@ public class TimetableChangeRequest {
     public void setFromTeacherId(Long fromTeacherId) {
         this.fromTeacherId = fromTeacherId;
     }
+    public List<Long> getTimeSlotIds() {
+        return timeSlotIds;
+    }
+    public void setTimeSlotIds(List<Long> timeSlotIds) {
+        this.timeSlotIds = timeSlotIds;
+    }
     public Long getToTeacherId() {
         return toTeacherId;
     }
@@ -67,12 +59,18 @@ public class TimetableChangeRequest {
     public void setClassroomId(Long classroomId) {
         this.classroomId = classroomId;
     }
-    public List<Long> getTimeSlotIds() {
-        return timeSlotIds;
+    public LocalDate getDateFrom() {
+        return dateFrom;
     }
-    public void setTimeSlotIds(List<Long> timeSlotIds) {
-        this.timeSlotIds = timeSlotIds;
+    public void setDateFrom(LocalDate dateFrom) {
+        this.dateFrom = dateFrom;
+    }
+    public LocalDate getDateTo() {
+        return dateTo;
+    }
+    public void setDateTo(LocalDate dateTo) {
+        this.dateTo = dateTo;
     }
 
-    
+    // getters/setters...
 }
