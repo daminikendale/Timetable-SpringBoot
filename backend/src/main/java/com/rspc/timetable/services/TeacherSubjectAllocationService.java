@@ -107,4 +107,13 @@ public class TeacherSubjectAllocationService {
                 .filter(Objects::nonNull).distinct().toList();
         return ids.isEmpty() ? List.of() : teacherRepository.findAllById(ids);
     }
+
+    @Transactional(readOnly = true)
+    public Teacher pickAnyTeacherFor(Long subjectId, Long yearId) {
+        if (subjectId == null || yearId == null) return null;
+        List<TeacherSubjectAllocation> list = repository.findBySubjectIdAndYearId(subjectId, yearId);
+        if (list == null || list.isEmpty()) return null;
+        Long teacherId = list.get(0).getTeacherId();
+        return teacherId == null ? null : teacherRepository.findById(teacherId).orElse(null);
+    }
 }

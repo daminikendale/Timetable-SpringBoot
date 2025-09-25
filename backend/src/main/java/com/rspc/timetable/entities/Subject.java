@@ -3,12 +3,11 @@ package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
 import lombok.*;
-
+// src/main/java/com/rspc/timetable/entities/Subject.java
 @Entity
-@Table(name = "subject", uniqueConstraints = @UniqueConstraint(name = "uk_subject_code", columnNames = "code"))
+@Table(name = "subject") // ensure this matches your actual table name
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Subject {
-
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
@@ -37,7 +36,7 @@ public class Subject {
     @JoinColumn(name = "semester_id", nullable = false)
     private Semester semester;
 
-    // New: lower means tougher/earlier
+    // NEW: priority for scheduling/order
     @Column(name = "priority", nullable = false)
-    private Integer priority = 100;
+    private Integer priority = 0;
 }

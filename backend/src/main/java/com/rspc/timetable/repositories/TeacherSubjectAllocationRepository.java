@@ -1,3 +1,4 @@
+// src/main/java/com/rspc/timetable/repositories/TeacherSubjectAllocationRepository.java
 package com.rspc.timetable.repositories;
 
 import com.rspc.timetable.entities.TeacherSubjectAllocation;
