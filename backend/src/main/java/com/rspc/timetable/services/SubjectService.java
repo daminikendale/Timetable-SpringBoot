@@ -33,27 +33,23 @@ public class SubjectService {
         Map<Long, Semester> sems = semesterService.findAllByIds(semIds).stream()
                 .collect(Collectors.toMap(Semester::getId, s -> s));
 
+        // First pass: build/refresh entities and collect for ranking if priority missing
         List<Subject> batch = new ArrayList<>(dtos.size());
+        record Pending(Subject s, int difficulty) {}
+        Map<String, List<Pending>> groupForRank = new HashMap<>();
+
         for (SubjectDTO d : dtos) {
             Subject s = subjectRepository.findByCode(d.getCode()).orElseGet(Subject::new);
             s.setCode(d.getCode());
             s.setName(d.getName());
 
-            // Convert type string -> enum
-            try {
-                s.setType(SubjectType.valueOf(d.getType().toUpperCase()));
-            } catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException("Invalid SubjectType: " + d.getType());
-            }
+            try { s.setType(SubjectType.valueOf(d.getType().toUpperCase())); }
+            catch (IllegalArgumentException e) { throw new IllegalArgumentException("Invalid SubjectType: " + d.getType()); }
 
             s.setCredits(d.getCredits());
 
-            // Convert category string -> enum
-            try {
-                s.setCategory(SubjectCategory.valueOf(d.getCategory().toUpperCase()));
-            } catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException("Invalid SubjectCategory: " + d.getCategory());
-            }
+            try { s.setCategory(SubjectCategory.valueOf(d.getCategory().toUpperCase())); }
+            catch (IllegalArgumentException e) { throw new IllegalArgumentException("Invalid SubjectCategory: " + d.getCategory()); }
 
             Year y = years.get(d.getYearId());
             if (y == null) throw new IllegalArgumentException("Invalid yearId: " + d.getYearId());
@@ -63,8 +59,34 @@ public class SubjectService {
             if (sem == null) throw new IllegalArgumentException("Invalid semesterId: " + d.getSemesterId());
             s.setSemester(sem);
 
+            if (d.getPriority() != null) {
+                s.setPriority(d.getPriority());
+            } else {
+                // compute difficulty: credits + categoryWeight + typeWeight
+                int categoryWeight = switch (s.getCategory()) {
+                    case REGULAR -> 2;
+                    case PROGRAM_ELECTIVE -> 1;
+                    case OPEN_ELECTIVE -> 0;
+                };
+                int typeWeight = (s.getType() == SubjectType.THEORY) ? 1 : 0;
+                int difficulty = s.getCredits() + categoryWeight + typeWeight;
+                String key = y.getId() + "-" + sem.getId();
+                groupForRank.computeIfAbsent(key, k -> new ArrayList<>()).add(new Pending(s, difficulty));
+            }
+
             batch.add(s);
         }
+
+        // Second pass: rank within each year-sem by difficulty desc, assign priority 1..N
+        for (var e : groupForRank.entrySet()) {
+            List<Pending> list = e.getValue();
+            list.sort(Comparator.<Pending>comparingInt(p -> -p.difficulty)); // higher difficulty first
+            int rank = 1;
+            for (Pending p : list) {
+                p.s.setPriority(rank++);
+            }
+        }
+
         return subjectRepository.saveAll(batch);
     }
 

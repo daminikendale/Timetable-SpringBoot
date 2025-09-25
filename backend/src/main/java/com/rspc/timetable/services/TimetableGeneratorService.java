@@ -80,52 +80,54 @@ public class TimetableGeneratorService {
         }
     }
 
-    private List<Timetable> generateTimetableForYearSemester(
-            List<Subject> subjects,
-            List<Division> divisions,
-            List<Classroom> allClassrooms,
-            List<TimeSlot> allTimeSlots,
-            List<Break> allBreaks) {
+    // inside generateTimetableForYearSemester(...)
+private List<Timetable> generateTimetableForYearSemester(
+        List<Subject> subjects,
+        List<Division> divisions,
+        List<Classroom> allClassrooms,
+        List<TimeSlot> allTimeSlots,
+        List<Break> allBreaks) {
 
-        List<Timetable> timetableEntries = new ArrayList<>();
-        List<TimeSlot> sortedTimeSlots = allTimeSlots.stream()
-                .sorted(Comparator.comparing(TimeSlot::getStartTime))
-                .collect(Collectors.toList());
+    List<Timetable> timetableEntries = new ArrayList<>();
 
-        Map<String, Map<String, Integer>> teacherDayHours = new HashMap<>();
-        Map<String, Set<String>> teacherTimeSlots = new HashMap<>();
-        Map<String, Set<String>> classroomTimeSlots = new HashMap<>();
-        Map<String, String> divisionTimeSlots = new HashMap<>();
+    // Earliest slots first (existing)
+    List<TimeSlot> sortedTimeSlots = allTimeSlots.stream()
+            .sorted(Comparator.comparing(TimeSlot::getStartTime))
+            .collect(Collectors.toList());
 
-        String[] weekDays = {"MON", "TUE", "WED", "THU", "FRI"};
+    // New: Harder subjects first by lower priority, then higher credits
+    subjects.sort(
+        Comparator.comparing(Subject::getPriority, Comparator.nullsLast(Integer::compareTo))
+                  .thenComparing(Subject::getCredits, Comparator.nullsLast(Comparator.reverseOrder()))
+    );
 
-        for (String day : weekDays) {
-            for (Subject subject : subjects) {
-                boolean isLab = subject.getType() == SubjectType.LAB;
-                List<Teacher> availableTeachers = getTeachersForSubject(subject, isLab);
-                if (availableTeachers.isEmpty()) continue;
+    Map<String, Map<String, Integer>> teacherDayHours = new HashMap<>();
+    Map<String, Set<String>> teacherTimeSlots = new HashMap<>();
+    Map<String, Set<String>> classroomTimeSlots = new HashMap<>();
+    Map<String, String> divisionTimeSlots = new HashMap<>();
 
-                List<Classroom> suitableClassrooms = getSuitableClassrooms(subject, allClassrooms);
-                if (suitableClassrooms.isEmpty()) continue;
+    String[] weekDays = {"MON", "TUE", "WED", "THU", "FRI"};
+    for (String day : weekDays) {
+        for (Subject subject : subjects) {
+            boolean isLab = subject.getType() == SubjectType.LAB;
+            List<Teacher> availableTeachers = getTeachersForSubject(subject, isLab);
+            if (availableTeachers.isEmpty()) continue;
 
-                allocateSubjectToDivisions(
-                        subject,
-                        divisions,
-                        availableTeachers,
-                        suitableClassrooms,
-                        sortedTimeSlots,
-                        day,
-                        timetableEntries,
-                        teacherDayHours,
-                        teacherTimeSlots,
-                        classroomTimeSlots,
-                        divisionTimeSlots,
-                        allBreaks
-                );
-            }
+            List<Classroom> suitableClassrooms = getSuitableClassrooms(subject, allClassrooms);
+            if (suitableClassrooms.isEmpty()) continue;
+
+            allocateSubjectToDivisions(
+                subject, divisions, availableTeachers, suitableClassrooms,
+                sortedTimeSlots, day, timetableEntries,
+                teacherDayHours, teacherTimeSlots, classroomTimeSlots,
+                divisionTimeSlots, allBreaks
+            );
         }
-        return timetableEntries;
     }
+
+    return timetableEntries;
+}
+
 
     private List<Teacher> getTeachersForSubject(Subject subject, boolean isLab) {
         Long yearId = subject.getYear() != null ? subject.getYear().getId() : null;

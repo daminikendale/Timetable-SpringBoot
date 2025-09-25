@@ -8,6 +8,7 @@ import lombok.*;
 @Table(name = "subject", uniqueConstraints = @UniqueConstraint(name = "uk_subject_code", columnNames = "code"))
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Subject {
+
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
@@ -35,4 +36,8 @@ public class Subject {
     @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "semester_id", nullable = false)
     private Semester semester;
+
+    // New: lower means tougher/earlier
+    @Column(name = "priority", nullable = false)
+    private Integer priority = 100;
 }
