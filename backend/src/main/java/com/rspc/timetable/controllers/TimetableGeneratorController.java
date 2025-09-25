@@ -1,3 +1,4 @@
+// src/main/java/com/rspc/timetable/controllers/TimetableGeneratorController.java
 package com.rspc.timetable.controllers;
 
 import com.rspc.timetable.services.TimetableGeneratorService;
@@ -16,13 +17,16 @@ public class TimetableGeneratorController {
     }
 
     @PostMapping("/generate")
-    public ResponseEntity<String> generateTimetable() {
+    public ResponseEntity<?> generateTimetable() {
         try {
             String result = timetableGeneratorService.generateCompleteTimetable();
             return ResponseEntity.ok(result);
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                .body("Failed to generate timetable: " + e.getMessage());
+        } catch (Throwable e) { // temporarily broaden for visibility during debugging
+            // TODO: inject logger and log stack trace: log.error("Generation failed", e);
+            String body = String.format("{\"error\":\"%s\",\"message\":\"%s\"}",
+                    e.getClass().getSimpleName(),
+                    String.valueOf(e.getMessage()));
+            return ResponseEntity.internalServerError().body(body);
         }
     }
 }
