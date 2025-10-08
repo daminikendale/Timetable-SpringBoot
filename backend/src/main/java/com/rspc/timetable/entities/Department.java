@@ -2,10 +2,11 @@ package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
 import lombok.*;
+
 import java.util.Set;
 
 @Entity
-@Table(name = "departments")
+@Table(name = "department")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -18,8 +19,7 @@ public class Department {
 
     @Column(nullable = false, unique = true)
     private String name;
-    
-    // A department now directly has course offerings
+
     @OneToMany(mappedBy = "department", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private Set<CourseOffering> courseOfferings;
 }

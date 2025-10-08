@@ -8,7 +8,6 @@ import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -34,32 +33,32 @@ public class CourseOfferingServiceImpl implements CourseOfferingService {
         Semester semester = semesterRepository.findById(dto.getSemesterId())
                 .orElseThrow(() -> new EntityNotFoundException("Semester not found: " + dto.getSemesterId()));
 
-        CourseOffering newOffering = new CourseOffering();
-        newOffering.setSubject(subject);
-        newOffering.setDepartment(department);
-        newOffering.setYear(year);
-        newOffering.setSemester(semester);
-        newOffering.setLecPerWeek(dto.getLecPerWeek());
-        newOffering.setTutPerWeek(dto.getTutPerWeek());
-        newOffering.setLabPerWeek(dto.getLabPerWeek());
+        CourseOffering offering = new CourseOffering();
+        offering.setSubject(subject);
+        offering.setDepartment(department);
+        offering.setYear(year);
+        offering.setSemester(semester);
+        offering.setLecPerWeek(dto.getLecPerWeek());
+        offering.setTutPerWeek(dto.getTutPerWeek());
+        offering.setLabPerWeek(dto.getLabPerWeek());
+        offering.setWeeklyHours(dto.getWeeklyHours());
 
-        CourseOffering savedOffering = courseOfferingRepository.save(newOffering);
-        return new CourseOfferingDTO(savedOffering);
+        return new CourseOfferingDTO(courseOfferingRepository.save(offering));
     }
 
-    @Override // This annotation will now work correctly
+    @Override
     @Transactional
     public List<CourseOfferingDTO> createBulkCourseOfferings(List<CourseOfferingDTO> dtos) {
-        List<CourseOffering> offeringsToSave = dtos.stream().map(dto -> {
+        List<CourseOffering> offerings = dtos.stream().map(dto -> {
             Subject subject = subjectRepository.findById(dto.getSubjectId())
-                    .orElseThrow(() -> new EntityNotFoundException("Subject not found for bulk creation: " + dto.getSubjectId()));
+                    .orElseThrow(() -> new EntityNotFoundException("Subject not found: " + dto.getSubjectId()));
             Department department = departmentRepository.findById(dto.getDepartmentId())
-                    .orElseThrow(() -> new EntityNotFoundException("Department not found for bulk creation: " + dto.getDepartmentId()));
+                    .orElseThrow(() -> new EntityNotFoundException("Department not found: " + dto.getDepartmentId()));
             Year year = yearRepository.findById(dto.getYearId())
-                    .orElseThrow(() -> new EntityNotFoundException("Year not found for bulk creation: " + dto.getYearId()));
+                    .orElseThrow(() -> new EntityNotFoundException("Year not found: " + dto.getYearId()));
             Semester semester = semesterRepository.findById(dto.getSemesterId())
-                    .orElseThrow(() -> new EntityNotFoundException("Semester not found for bulk creation: " + dto.getSemesterId()));
-            
+                    .orElseThrow(() -> new EntityNotFoundException("Semester not found: " + dto.getSemesterId()));
+
             CourseOffering offering = new CourseOffering();
             offering.setSubject(subject);
             offering.setDepartment(department);
@@ -68,13 +67,12 @@ public class CourseOfferingServiceImpl implements CourseOfferingService {
             offering.setLecPerWeek(dto.getLecPerWeek());
             offering.setTutPerWeek(dto.getTutPerWeek());
             offering.setLabPerWeek(dto.getLabPerWeek());
+            offering.setWeeklyHours(dto.getWeeklyHours());
             return offering;
         }).collect(Collectors.toList());
 
-        List<CourseOffering> savedOfferings = courseOfferingRepository.saveAll(offeringsToSave);
-        return savedOfferings.stream()
-                .map(CourseOfferingDTO::new)
-                .collect(Collectors.toList());
+        return courseOfferingRepository.saveAll(offerings)
+                .stream().map(CourseOfferingDTO::new).collect(Collectors.toList());
     }
 
     @Override
@@ -92,7 +90,7 @@ public class CourseOfferingServiceImpl implements CourseOfferingService {
                 .map(CourseOfferingDTO::new)
                 .orElseThrow(() -> new EntityNotFoundException("Course Offering not found: " + id));
     }
-    
+
     @Override
     @Transactional
     public void deleteOffering(Long id) {
@@ -100,5 +98,21 @@ public class CourseOfferingServiceImpl implements CourseOfferingService {
             throw new EntityNotFoundException("Course Offering not found: " + id);
         }
         courseOfferingRepository.deleteById(id);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CourseOfferingDTO> getOfferingsBySemesterNumbers(List<Integer> semesterNumbers) {
+        // ✅ FIX: Calling the new, explicitly defined repository method
+        return courseOfferingRepository.findOfferingsBySemesterNumbers(semesterNumbers)
+                .stream().map(CourseOfferingDTO::new).collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CourseOfferingDTO> getOfferingsBySubjectAndSemesters(Long subjectId, List<Integer> semesterNumbers) {
+        // ✅ FIX: Calling the new, explicitly defined repository method
+        return courseOfferingRepository.findOfferingsBySubjectAndSemesterNumbers(subjectId, semesterNumbers)
+                .stream().map(CourseOfferingDTO::new).collect(Collectors.toList());
     }
 }

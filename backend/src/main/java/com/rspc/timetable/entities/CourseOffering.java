@@ -15,28 +15,24 @@ public class CourseOffering {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "subject_id", nullable = false)
     private Subject subject;
-    
-    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "department_id", nullable = false)
     private Department department;
 
-    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "year_id", nullable = false)
     private Year year;
 
-    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "semester_id", nullable = false)
     private Semester semester;
 
-    @Column(nullable = false)
-    private Integer lecPerWeek = 0;
-
-    @Column(nullable = false)
-    private Integer tutPerWeek = 0;
-
-    @Column(nullable = false)
-    private Integer labPerWeek = 0;
+    private Integer lecPerWeek;
+    private Integer tutPerWeek;
+    private Integer labPerWeek;
+    private Integer weeklyHours;
 }
