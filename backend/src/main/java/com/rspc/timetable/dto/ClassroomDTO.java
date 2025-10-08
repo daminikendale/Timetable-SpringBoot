@@ -1,23 +1,24 @@
 package com.rspc.timetable.dto;
 
+import com.rspc.timetable.entities.Classroom;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class ClassroomDTO {
     private Long id;
-    private String name;
-    private int capacity;  // use int, not String
+    private String roomNumber;
+    private int capacity;
+    private String type; // Using String for simplicity in DTOs
 
-    public ClassroomDTO(Long id, String name, int capacity) {
-        this.id = id;
-        this.name = name;
-        this.capacity = capacity;
+    // Convenience constructor to map from the entity
+    public ClassroomDTO(Classroom classroom) {
+        this.id = classroom.getId();
+        this.roomNumber = classroom.getRoomNumber();
+        this.capacity = classroom.getCapacity();
+        this.type = classroom.getType().name();
     }
-
-    // --- Getters & Setters ---
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-
-    public int getCapacity() { return capacity; }
-    public void setCapacity(int capacity) { this.capacity = capacity; }
 }

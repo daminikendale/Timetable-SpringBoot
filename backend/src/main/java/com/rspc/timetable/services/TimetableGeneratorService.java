@@ -1,233 +1,188 @@
-// src/main/java/com/rspc/timetable/services/TimetableGeneratorService.java
 package com.rspc.timetable.services;
 
 import com.rspc.timetable.entities.*;
-import com.rspc.timetable.repositories.TimetableRepository;
+import com.rspc.timetable.repositories.*;
+import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.*;
+import java.time.DayOfWeek;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class TimetableGeneratorService {
 
-    private final TimetableRepository timetableRepository;
-    private final YearService yearService;
-    private final DivisionService divisionService;
-    private final SubjectService subjectService;
-    private final TeacherService teacherService;
-    private final ClassroomService classroomService;
-    private final TimeSlotService timeSlotService;
-    private final BreakService breakService;
-    private final TeacherSubjectAllocationService teacherSubjectAllocationService;
+    private static final Logger logger = LoggerFactory.getLogger(TimetableGeneratorService.class);
 
-    public TimetableGeneratorService(
-            TimetableRepository timetableRepository,
-            YearService yearService,
-            DivisionService divisionService,
-            SubjectService subjectService,
-            TeacherService teacherService,
-            ClassroomService classroomService,
-            TimeSlotService timeSlotService,
-            BreakService breakService,
-            TeacherSubjectAllocationService teacherSubjectAllocationService
-    ) {
-        this.timetableRepository = timetableRepository;
-        this.yearService = yearService;
-        this.divisionService = divisionService;
-        this.subjectService = subjectService;
-        this.teacherService = teacherService;
-        this.classroomService = classroomService;
-        this.timeSlotService = timeSlotService;
-        this.breakService = breakService;
-        this.teacherSubjectAllocationService = teacherSubjectAllocationService;
-    }
+    private final ScheduledClassRepository scheduledClassRepository;
+    private final CourseOfferingRepository courseOfferingRepository;
+    private final ClassroomRepository classroomRepository;
+    private final TimeSlotRepository timeSlotRepository;
+    private final SemesterDivisionRepository semesterDivisionRepository;
+    private final TeacherSubjectAllocationRepository teacherSubjectAllocationRepository;
 
-    // Full generation across all years/semesters
+    public enum SemesterType { ODD, EVEN }
+    private enum SessionType { LECTURE, LAB, TUTORIAL }
+
     @Transactional
-    public String generateCompleteTimetable() {
-        timetableRepository.deleteAll();
+    public String generateTimetableFor(SemesterType semesterType) {
+        try {
+            // 1. Setup
+            List<Integer> targetSemesterNumbers = semesterType == SemesterType.ODD 
+                ? List.of(1, 3, 5, 7) 
+                : List.of(2, 4, 6, 8);
+            
+            logger.info("Starting timetable generation for {} semesters: {}", semesterType, targetSemesterNumbers);
+            
+            scheduledClassRepository.deleteAllInBatch();
+            logger.info("Cleared all existing scheduled classes.");
 
-        List<Division> divisions   = divisionService.getAllDivisions();
-        List<Subject> subjects     = subjectService.getAllSubjects();
-        List<Classroom> classrooms = classroomService.getAllClassrooms();
-        List<TimeSlot> timeSlots   = timeSlotService.getAllTimeSlots();
+            // --- FIX #1: Call the correct repository method ---
+            List<CourseOffering> relevantCourseOfferings = courseOfferingRepository.findBySubject_Semester_SemesterNumberIn(targetSemesterNumbers);
+            
+            List<Classroom> allClassrooms = classroomRepository.findAll();
+            List<TimeSlot> allTimeSlots = timeSlotRepository.findByIsBreak(false);
+            List<DayOfWeek> weekDays = List.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY);
+            
+            Map<Long, List<Teacher>> subjectToTeachersMap = teacherSubjectAllocationRepository.findAll()
+                    .stream()
+                    .collect(Collectors.groupingBy(
+                        alloc -> alloc.getSubject().getId(),
+                        Collectors.mapping(TeacherSubjectAllocation::getTeacher, Collectors.toList())
+                    ));
 
-        validatePrereqs(divisions, subjects, classrooms, timeSlots);
+            Map<Long, List<Division>> semesterToDivisionsMap = semesterDivisionRepository.findBySemester_SemesterNumberIn(targetSemesterNumbers)
+                    .stream()
+                    .collect(Collectors.groupingBy(
+                        sd -> sd.getSemester().getId(),
+                        Collectors.mapping(SemesterDivision::getDivision, Collectors.toList())
+                    ));
+            
+            List<ScheduledClass> generatedSchedule = new ArrayList<>();
 
-        // Sort by start time only; weekday is chosen per Timetable row
-        timeSlots.sort(Comparator.comparing(TimeSlot::getStartTime, Comparator.nullsLast(String::compareTo)));
+            // 2. Core Scheduling Logic
+            for (CourseOffering offering : relevantCourseOfferings) {
+                // --- FIX #2: Get semester ID via the subject relationship ---
+                Long semesterId = offering.getSubject().getSemester().getId();
+                List<Division> applicableDivisions = semesterToDivisionsMap.getOrDefault(semesterId, Collections.emptyList());
 
-        List<Timetable> generated = new ArrayList<>();
+                if (applicableDivisions.isEmpty()) continue;
+                
+                List<Teacher> availableTeachers = subjectToTeachersMap.getOrDefault(offering.getSubject().getId(), Collections.emptyList());
+                if (availableTeachers.isEmpty()) {
+                    logger.warn("No teachers allocated for subject: {}. Skipping.", offering.getSubject().getName());
+                    continue;
+                }
+                
+                Collections.shuffle(applicableDivisions);
+                Division targetDivision = applicableDivisions.get(0);
+                
+                Collections.shuffle(availableTeachers);
+                Teacher assignedTeacher = availableTeachers.get(0);
 
-        for (Division div : divisions) {
-            Long divYearId = div.getYear() != null ? div.getYear().getId() : null;
-            Long divSemId  = div.getSemester() != null ? div.getSemester().getId() : null;
-            if (divYearId == null || divSemId == null) continue;
+                scheduleSessionType(offering, assignedTeacher, targetDivision, SessionType.LECTURE, offering.getLecPerWeek(), 1, generatedSchedule, allClassrooms, allTimeSlots, weekDays);
+                scheduleSessionType(offering, assignedTeacher, targetDivision, SessionType.LAB, offering.getLabPerWeek(), 2, generatedSchedule, allClassrooms, allTimeSlots, weekDays);
+                scheduleSessionType(offering, assignedTeacher, targetDivision, SessionType.TUTORIAL, offering.getTutPerWeek(), 1, generatedSchedule, allClassrooms, allTimeSlots, weekDays);
+            }
+            
+            // 3. Finalization
+            scheduledClassRepository.saveAll(generatedSchedule);
+            logger.info("Successfully generated and saved {} new scheduled classes.", generatedSchedule.size());
+            return "Timetable for " + semesterType + " semesters generated successfully with " + generatedSchedule.size() + " entries.";
 
-            List<Subject> divSubjects = subjects.stream()
-                .filter(s -> s.getYear()!=null && s.getSemester()!=null)
-                .filter(s -> Objects.equals(s.getYear().getId(), divYearId)
-                          && Objects.equals(s.getSemester().getId(), divSemId))
-                .toList();
-
-            generated.addAll(generateForDivision(div, divSubjects, classrooms, timeSlots));
+        } catch (Exception e) {
+            logger.error("Error during timetable generation", e);
+            throw new RuntimeException("Error generating timetable: " + e.getMessage(), e);
         }
-
-        timetableRepository.saveAll(generated);
-        return "Timetable generated successfully for " + generated.size() + " entries";
     }
 
-    // Generate for a single year (e.g., Year 1)
-    @Transactional
-    public String generateForYear(Long yearId) {
-        List<Division> allDivisions   = divisionService.getAllDivisions();
-        List<Subject>  allSubjects    = subjectService.getAllSubjects();
-        List<Classroom> classrooms    = classroomService.getAllClassrooms();
-        List<TimeSlot>  timeSlots     = timeSlotService.getAllTimeSlots();
+    private void scheduleSessionType(CourseOffering offering, Teacher teacher, Division division, SessionType sessionType, int hoursToSchedule, int blockLength, List<ScheduledClass> generatedSchedule, List<Classroom> allClassrooms, List<TimeSlot> allTimeSlots, List<DayOfWeek> weekDays) {
+        if (hoursToSchedule <= 0) return;
 
-        List<Division> divisions = allDivisions.stream()
-            .filter(d -> d.getYear()!=null && d.getSemester()!=null
-                      && Objects.equals(d.getYear().getId(), yearId))
-            .toList();
+        int numBlocksToSchedule = hoursToSchedule / blockLength;
+        for (int i = 0; i < numBlocksToSchedule; i++) {
+            boolean slotFound = false;
+            Collections.shuffle(weekDays);
+            for (DayOfWeek day : weekDays) {
+                Collections.shuffle(allTimeSlots);
+                for (int j = 0; j <= allTimeSlots.size() - blockLength; j++) {
+                    List<TimeSlot> potentialBlock = allTimeSlots.subList(j, j + blockLength);
+                    Classroom suitableClassroom = findSuitableClassroom(allClassrooms, sessionType);
 
-        if (divisions.isEmpty())  throw new IllegalStateException("No divisions for yearId=" + yearId);
-        if (classrooms.isEmpty()) throw new IllegalStateException("No classrooms found");
-        if (timeSlots.isEmpty())  throw new IllegalStateException("No time slots found");
-
-        List<Subject> subjectsThisYear = allSubjects.stream()
-            .filter(s -> s.getYear()!=null && s.getSemester()!=null
-                      && Objects.equals(s.getYear().getId(), yearId))
-            .toList();
-
-        if (subjectsThisYear.isEmpty()) throw new IllegalStateException("No subjects for yearId=" + yearId);
-
-        timeSlots.sort(Comparator.comparing(TimeSlot::getStartTime, Comparator.nullsLast(String::compareTo)));
-
-        List<Timetable> generated = new ArrayList<>();
-
-        for (Division div : divisions) {
-            Long semId = div.getSemester().getId();
-            List<Subject> divSubjects = subjectsThisYear.stream()
-                .filter(s -> Objects.equals(s.getSemester().getId(), semId))
-                .toList();
-
-            generated.addAll(generateForDivision(div, divSubjects, classrooms, timeSlots));
-        }
-
-        timetableRepository.saveAll(generated);
-        return "Timetable generated for yearId=" + yearId + " with " + generated.size() + " entries";
-    }
-
-    // Generate for a specific year + semester
-    @Transactional
-    public String generateForTerm(Long yearId, Long semesterId) {
-        List<Division> allDivisions   = divisionService.getAllDivisions();
-        List<Subject>  allSubjects    = subjectService.getAllSubjects();
-        List<Classroom> classrooms    = classroomService.getAllClassrooms();
-        List<TimeSlot>  timeSlots     = timeSlotService.getAllTimeSlots();
-
-        List<Division> divisions = allDivisions.stream()
-            .filter(d -> d.getYear()!=null && d.getSemester()!=null
-                      && Objects.equals(d.getYear().getId(), yearId)
-                      && Objects.equals(d.getSemester().getId(), semesterId))
-            .toList();
-
-        List<Subject> subjects = allSubjects.stream()
-            .filter(s -> s.getYear()!=null && s.getSemester()!=null
-                      && Objects.equals(s.getYear().getId(), yearId)
-                      && Objects.equals(s.getSemester().getId(), semesterId))
-            .toList();
-
-        if (divisions.isEmpty())  throw new IllegalStateException("No divisions for yearId=" + yearId + ", semesterId=" + semesterId);
-        if (subjects.isEmpty())   throw new IllegalStateException("No subjects for yearId=" + yearId + ", semesterId=" + semesterId);
-        if (classrooms.isEmpty()) throw new IllegalStateException("No classrooms found");
-        if (timeSlots.isEmpty())  throw new IllegalStateException("No time slots found");
-
-        timeSlots.sort(Comparator.comparing(TimeSlot::getStartTime, Comparator.nullsLast(String::compareTo)));
-
-        List<Timetable> generated = new ArrayList<>();
-        for (Division div : divisions) {
-            generated.addAll(generateForDivision(div, subjects, classrooms, timeSlots));
-        }
-
-        timetableRepository.saveAll(generated);
-        return "Timetable generated for yearId=" + yearId + ", semesterId=" + semesterId
-                + " with " + generated.size() + " entries";
-    }
-
-    // Validate prerequisites up-front
-    private void validatePrereqs(List<Division> divisions, List<Subject> subjects,
-                                 List<Classroom> classrooms, List<TimeSlot> timeSlots) {
-        if (divisions == null || divisions.isEmpty())  throw new IllegalStateException("No divisions found");
-        if (subjects == null  || subjects.isEmpty())   throw new IllegalStateException("No subjects found");
-        if (classrooms == null|| classrooms.isEmpty()) throw new IllegalStateException("No classrooms found");
-        if (timeSlots == null || timeSlots.isEmpty())  throw new IllegalStateException("No time slots found");
-        if (subjects.stream().anyMatch(s -> s.getYear()==null || s.getSemester()==null))
-            throw new IllegalStateException("Some subjects have null year or semester");
-    }
-
-    // Balanced day-aware scheduler using dayless TimeSlot templates
-    private List<Timetable> generateForDivision(
-            Division div,
-            List<Subject> divSubjects,
-            List<Classroom> classrooms,
-            List<TimeSlot> timeSlots
-    ) {
-        List<Timetable> out = new ArrayList<>();
-        if (divSubjects == null || divSubjects.isEmpty()) return out;
-
-        // Define working week; adjust as needed
-        List<String> days = List.of("MON","TUE","WED","THU","FRI");
-        Map<String,Integer> dayCounts = new HashMap<>();
-        Map<String,Integer> dayCursor = new HashMap<>();
-        days.forEach(d -> { dayCounts.put(d, 0); dayCursor.put(d, -1); });
-
-        // Time-of-day templates shared across days
-        List<TimeSlot> slotsByTime = new ArrayList<>(timeSlots);
-        slotsByTime.sort(Comparator.comparing(TimeSlot::getStartTime, Comparator.nullsLast(String::compareTo)));
-
-        for (Subject subj : divSubjects) {
-            boolean isLab = SubjectType.LAB.equals(subj.getType());
-            int sessions  = isLab ? 1 : Math.max(1, subj.getCredits() != null ? subj.getCredits() : 1);
-
-            Classroom room = classrooms.stream()
-                .filter(c -> isLab ? c.getType() == ClassroomType.LAB : c.getType() != ClassroomType.LAB)
-                .findFirst()
-                .orElseGet(() -> classrooms.get(0));
-
-            // Optional teacher pick; returns null if none found
-            Long yearId = div.getYear() != null ? div.getYear().getId() : null;
-            Teacher picked = teacherSubjectAllocationService.pickAnyTeacherFor(subj.getId(), yearId);
-
-            for (int k = 0; k < sessions; k++) {
-                // choose least-loaded day
-                String bestDay = days.stream()
-                        .min(Comparator.comparingInt(dayCounts::get))
-                        .orElse("MON");
-
-                // next time slot for that day (shared template)
-                int next = (dayCursor.get(bestDay) + 1) % slotsByTime.size();
-                dayCursor.put(bestDay, next);
-                TimeSlot ts = slotsByTime.get(next);
-
-                boolean elective = subj.getCategory() == SubjectCategory.OPEN_ELECTIVE
-                        || subj.getCategory() == SubjectCategory.PROGRAM_ELECTIVE;
-                String group = subj.getCategory() == SubjectCategory.OPEN_ELECTIVE ? "1"
-                        : (subj.getCategory() == SubjectCategory.PROGRAM_ELECTIVE ? "2" : null);
-
-                // Timetable.day must exist as a column on the table/entity
-                // inside TimetableGeneratorService.generateForDivision(...)
-Timetable tt = new Timetable(
-    div, subj, picked, room, ts, bestDay,
-    false, elective, group, null, null
-);
-
-                out.add(tt);
-                dayCounts.merge(bestDay, 1, Integer::sum);
+                    if (suitableClassroom != null && isBlockAvailable(teacher, division, suitableClassroom, day, potentialBlock, generatedSchedule)) {
+                        for (TimeSlot slot : potentialBlock) {
+                            ScheduledClass newClass = new ScheduledClass();
+                            newClass.setCourseOffering(offering);
+                            newClass.setTeacher(teacher);
+                            newClass.setDivision(division);
+                            newClass.setClassroom(suitableClassroom);
+                            newClass.setTimeSlot(slot);
+                            newClass.setDayOfWeek(day);
+                            newClass.setSessionType(ScheduledClass.SessionType.valueOf(sessionType.name()));
+                            generatedSchedule.add(newClass);
+                        }
+                        slotFound = true;
+                        break;
+                    }
+                }
+                if (slotFound) break;
+            }
+            if (!slotFound) {
+                logger.warn("Could not schedule {} block for subject: {} for division: {}", sessionType, offering.getSubject().getName(), division.getDivisionName());
             }
         }
-        return out;
+    }
+    
+    private boolean isBlockAvailable(Teacher teacher, Division division, Classroom classroom, DayOfWeek day, List<TimeSlot> block, List<ScheduledClass> schedule) {
+        for (TimeSlot slot : block) {
+            if (!isTeacherAvailable(teacher, day, slot, schedule) ||
+                !isClassroomAvailable(classroom, day, slot, schedule) ||
+                !isDivisionAvailable(division, day, slot, schedule)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    
+    private Classroom findSuitableClassroom(List<Classroom> allClassrooms, SessionType sessionType) {
+        Collections.shuffle(allClassrooms);
+        if (sessionType == SessionType.LAB) {
+            return allClassrooms.stream().filter(r -> r.getType() == Classroom.ClassroomType.LAB).findFirst().orElse(null);
+        }
+        if (sessionType == SessionType.TUTORIAL) {
+            return allClassrooms.stream().filter(r -> r.getType() == Classroom.ClassroomType.TUTORIAL_ROOM).findFirst().orElse(null);
+        }
+        return allClassrooms.stream().filter(r -> r.getType() == Classroom.ClassroomType.LECTURE_HALL).findFirst().orElse(null);
+    }
+    
+    private boolean isTeacherAvailable(Teacher teacher, DayOfWeek day, TimeSlot slot, List<ScheduledClass> currentSchedule) {
+        return currentSchedule.stream().noneMatch(sc ->
+            sc.getTeacher().getId().equals(teacher.getId()) &&
+            sc.getDayOfWeek() == day &&
+            sc.getTimeSlot().getId().equals(slot.getId())
+        );
+    }
+
+    private boolean isClassroomAvailable(Classroom classroom, DayOfWeek day, TimeSlot slot, List<ScheduledClass> currentSchedule) {
+        return currentSchedule.stream().noneMatch(sc ->
+            sc.getClassroom().getId().equals(classroom.getId()) &&
+            sc.getDayOfWeek() == day &&
+            sc.getTimeSlot().getId().equals(slot.getId())
+        );
+    }
+
+    private boolean isDivisionAvailable(Division division, DayOfWeek day, TimeSlot slot, List<ScheduledClass> currentSchedule) {
+        return currentSchedule.stream().noneMatch(sc ->
+            sc.getDivision().getId().equals(division.getId()) &&
+            sc.getDayOfWeek() == day &&
+            sc.getTimeSlot().getId().equals(slot.getId())
+        );
     }
 }

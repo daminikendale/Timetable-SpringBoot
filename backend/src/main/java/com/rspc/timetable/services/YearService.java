@@ -2,22 +2,20 @@ package com.rspc.timetable.services;
 
 import com.rspc.timetable.entities.Year;
 import com.rspc.timetable.repositories.YearRepository;
+import com.rspc.timetable.dto.YearDTO;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import com.rspc.timetable.dto.YearDTO;
-import java.util.stream.Collectors;
 import java.util.List;
-import java.util.Set;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class YearService {
 
     private final YearRepository yearRepository;
-
-    public YearService(YearRepository yearRepository) {
-        this.yearRepository = yearRepository;
-    }
 
     public List<Year> getAllYears() {
         return yearRepository.findAll();
@@ -39,15 +37,16 @@ public class YearService {
         yearRepository.deleteById(id);
     }
 
+    /**
+     * Correctly maps Year entities to the updated YearDTO.
+     */
     public List<YearDTO> getAllYearDTOs() {
         return yearRepository.findAll().stream()
-                .map(y -> new YearDTO(y.getId(), y.getYearNumber()))
+                .map(YearDTO::new) // Uses the smart constructor from the DTO
                 .collect(Collectors.toList());
     }
 
     public List<Year> findAllByIds(Set<Long> ids) {
-    // If you already have a repository, delegate.
-    return yearRepository.findAllById(ids);
-}
-
+        return yearRepository.findAllById(ids);
+    }
 }

@@ -3,6 +3,7 @@ package com.rspc.timetable.services;
 import com.rspc.timetable.entities.Classroom;
 import com.rspc.timetable.repositories.ClassroomRepository;
 import com.rspc.timetable.dto.ClassroomDTO;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -10,19 +11,15 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class ClassroomService {
 
     private final ClassroomRepository classroomRepository;
-
-    public ClassroomService(ClassroomRepository classroomRepository) {
-        this.classroomRepository = classroomRepository;
-    }
 
     public List<Classroom> getAllClassrooms() {
         return classroomRepository.findAll();
     }
 
-    // ✅ Return Optional here
     public Optional<Classroom> getClassroomById(Long id) {
         return classroomRepository.findById(id);
     }
@@ -39,10 +36,13 @@ public class ClassroomService {
         classroomRepository.deleteById(id);
     }
 
+    /**
+     * Correctly maps the updated Classroom entity to the ClassroomDTO.
+     */
     public List<ClassroomDTO> getAllClassroomDTOs() {
         return classroomRepository.findAll()
                 .stream()
-                .map(c -> new ClassroomDTO(c.getId(), c.getName(), c.getCapacity()))
+                .map(ClassroomDTO::new) // Using the convenience constructor from the DTO
                 .collect(Collectors.toList());
     }
 }

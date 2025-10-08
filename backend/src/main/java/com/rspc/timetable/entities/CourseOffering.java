@@ -1,69 +1,42 @@
 package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
+import lombok.*;
 
 @Entity
 @Table(name = "course_offerings")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
 public class CourseOffering {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "subject_id", nullable = false)
-    private Long subjectId;
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @JoinColumn(name = "subject_id", nullable = false)
+    private Subject subject;
+    
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @JoinColumn(name = "department_id", nullable = false)
+    private Department department;
 
-    @Column(name = "year_id", nullable = false)
-    private Long yearId;
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @JoinColumn(name = "year_id", nullable = false)
+    private Year year;
 
-    @Column(name = "semester_id", nullable = false)
-    private Long semesterId;
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @JoinColumn(name = "semester_id", nullable = false)
+    private Semester semester;
 
-    @Column(name = "division_id")
-    private Long divisionId;
-
-    @Column(name = "lec_per_week", nullable = false)
+    @Column(nullable = false)
     private Integer lecPerWeek = 0;
 
-    @Column(name = "tut_per_week", nullable = false)
+    @Column(nullable = false)
     private Integer tutPerWeek = 0;
 
-    @Column(name = "lab_per_week", nullable = false)
+    @Column(nullable = false)
     private Integer labPerWeek = 0;
-
-    @Column(name = "is_elective", nullable = false)
-    private Boolean isElective = false;
-
-    @Column(name = "elective_group_id")
-    private Long electiveGroupId;
-
-    // Getters and Setters
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-
-    public Long getSubjectId() { return subjectId; }
-    public void setSubjectId(Long subjectId) { this.subjectId = subjectId; }
-
-    public Long getYearId() { return yearId; }
-    public void setYearId(Long yearId) { this.yearId = yearId; }
-
-    public Long getSemesterId() { return semesterId; }
-    public void setSemesterId(Long semesterId) { this.semesterId = semesterId; }
-
-    public Long getDivisionId() { return divisionId; }
-    public void setDivisionId(Long divisionId) { this.divisionId = divisionId; }
-
-    public Integer getLecPerWeek() { return lecPerWeek; }
-    public void setLecPerWeek(Integer lecPerWeek) { this.lecPerWeek = lecPerWeek; }
-
-    public Integer getTutPerWeek() { return tutPerWeek; }
-    public void setTutPerWeek(Integer tutPerWeek) { this.tutPerWeek = tutPerWeek; }
-
-    public Integer getLabPerWeek() { return labPerWeek; }
-    public void setLabPerWeek(Integer labPerWeek) { this.labPerWeek = labPerWeek; }
-
-    public Boolean getIsElective() { return isElective; }
-    public void setIsElective(Boolean isElective) { this.isElective = isElective; }
-
-    public Long getElectiveGroupId() { return electiveGroupId; }
-    public void setElectiveGroupId(Long electiveGroupId) { this.electiveGroupId = electiveGroupId; }
 }

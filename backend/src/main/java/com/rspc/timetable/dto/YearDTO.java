@@ -1,27 +1,23 @@
 package com.rspc.timetable.dto;
 
+import com.rspc.timetable.entities.Year;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class YearDTO {
+
     private Long id;
-    private int yearNumber;
+    private String yearName; // Changed from yearNumber
 
-    public YearDTO(Long id, int yearNumber) {
-        this.id = id;
-        this.yearNumber = yearNumber;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public int getYearNumber() {
-        return yearNumber;
-    }
-
-    public void setYearNumber(int yearNumber) {
-        this.yearNumber = yearNumber;
+    /**
+     * Convenience constructor to map from the entity.
+     */
+    public YearDTO(Year year) {
+        this.id = year.getId();
+        this.yearName = year.getYearName(); // Uses the correct getter
     }
 }

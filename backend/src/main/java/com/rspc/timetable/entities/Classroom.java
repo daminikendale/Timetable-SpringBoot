@@ -1,36 +1,35 @@
 package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
+import lombok.Data;
 
+@Data
 @Entity
+@Table(name = "classrooms")
 public class Classroom {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String name;  // e.g., Room 11, Project lab
+    @Column(unique = true, nullable = false)
+    private String roomNumber;
 
+    @Column(nullable = false)
     private int capacity;
+
+    /**
+     * Defines the type of the classroom. This is crucial for the timetable generator
+     * to correctly assign LAB sessions to LAB rooms, THEORY to LECTURE_HALLS, etc.
+     */
     @Enumerated(EnumType.STRING)
-    private ClassroomType type;  // NORMAL or LAB
+    @Column(nullable = false)
+    private ClassroomType type;
 
-    public Classroom() {}
-
-    public Classroom(String name, ClassroomType type) {
-        this.name = name;
-        this.type = type;
-        this.capacity = capacity;
+    // The associated enum for the classroom type
+    public enum ClassroomType {
+        LECTURE_HALL,
+        LAB,
+        TUTORIAL_ROOM
     }
-
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-
-    public int getCapacity() { return capacity; }
-    public void setCapacity(int capacity) { this.capacity = capacity; }
-
-    public ClassroomType getType() { return type; }
-    public void setType(ClassroomType type) { this.type = type; }
 }

@@ -1,70 +1,34 @@
-// src/main/java/com/rspc/timetable/controllers/TimetableGeneratorController.java
 package com.rspc.timetable.controllers;
 
 import com.rspc.timetable.services.TimetableGeneratorService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/timetable-generator")
+@RequiredArgsConstructor
+@CrossOrigin(origins = "http://localhost:5173")
 public class TimetableGeneratorController {
 
     private final TimetableGeneratorService timetableGeneratorService;
 
-    public TimetableGeneratorController(TimetableGeneratorService timetableGeneratorService) {
-        this.timetableGeneratorService = timetableGeneratorService;
-    }
-
-    @PostMapping("/generate")
-    public ResponseEntity<?> generateTimetable(
-            @RequestParam(required = false) Long yearId,
-            @RequestParam(required = false) Long semesterId
-    ) {
+    /**
+     * Triggers the timetable generation process for a specific semester type.
+     * Example URLs:
+     * POST /api/timetable-generator/generate/ODD
+     * POST /api/timetable-generator/generate/EVEN
+     */
+    @PostMapping("/generate/{semesterType}")
+    public ResponseEntity<String> generateTimetable(
+        @PathVariable("semesterType") TimetableGeneratorService.SemesterType semesterType) {
+        
         try {
-            String result;
-            if (yearId != null && semesterId != null) {
-                result = timetableGeneratorService.generateForTerm(yearId, semesterId);
-            } else if (yearId != null) {
-                result = timetableGeneratorService.generateForYear(yearId);
-            } else {
-                result = timetableGeneratorService.generateCompleteTimetable();
-            }
+            String result = timetableGeneratorService.generateTimetableFor(semesterType);
             return ResponseEntity.ok(result);
-        } catch (Throwable e) {
-            String body = String.format(
-                "{\"error\":\"%s\",\"message\":\"%s\"}",
-                e.getClass().getSimpleName(),
-                String.valueOf(e.getMessage())
-            );
-            return ResponseEntity.internalServerError().body(body);
-        }
-    }
-
-    @PostMapping("/generate-year")
-    public ResponseEntity<?> generateForYear(@RequestParam Long yearId) {
-        try {
-            return ResponseEntity.ok(timetableGeneratorService.generateForYear(yearId));
-        } catch (Throwable e) {
-            String body = String.format(
-                "{\"error\":\"%s\",\"message\":\"%s\"}",
-                e.getClass().getSimpleName(),
-                String.valueOf(e.getMessage())
-            );
-            return ResponseEntity.internalServerError().body(body);
-        }
-    }
-
-    @PostMapping("/generate-term")
-    public ResponseEntity<?> generateForTerm(@RequestParam Long yearId, @RequestParam Long semesterId) {
-        try {
-            return ResponseEntity.ok(timetableGeneratorService.generateForTerm(yearId, semesterId));
-        } catch (Throwable e) {
-            String body = String.format(
-                "{\"error\":\"%s\",\"message\":\"%s\"}",
-                e.getClass().getSimpleName(),
-                String.valueOf(e.getMessage())
-            );
-            return ResponseEntity.internalServerError().body(body);
+        } catch (Exception e) {
+            // In a real app, a @ControllerAdvice would handle this more gracefully
+            return ResponseEntity.internalServerError().body(e.getMessage());
         }
     }
 }

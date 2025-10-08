@@ -1,24 +1,25 @@
 package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
+import lombok.*;
+import java.util.Set;
 
 @Entity
+@Table(name = "departments")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
 public class Department {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String name;  // e.g. "ENTC"
-
-    public Department() {}
-
-    public Department(String name) {
-        this.name = name;
-    }
-
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    @Column(nullable = false, unique = true)
+    private String name;
+    
+    // A department now directly has course offerings
+    @OneToMany(mappedBy = "department", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private Set<CourseOffering> courseOfferings;
 }

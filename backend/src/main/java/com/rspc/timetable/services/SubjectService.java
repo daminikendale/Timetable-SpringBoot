@@ -1,99 +1,86 @@
-// src/main/java/com/rspc/timetable/services/SubjectService.java
 package com.rspc.timetable.services;
 
 import com.rspc.timetable.dto.SubjectDTO;
-import com.rspc.timetable.entities.*;
+import com.rspc.timetable.entities.Semester;
+import com.rspc.timetable.entities.Subject;
+import com.rspc.timetable.repositories.SemesterRepository;
 import com.rspc.timetable.repositories.SubjectRepository;
-import jakarta.transaction.Transactional;
-import lombok.RequiredArgsConstructor;
+import jakarta.persistence.EntityNotFoundException;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
-
-import java.util.*;
+import org.springframework.transaction.annotation.Transactional;
+import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class SubjectService {
 
     private final SubjectRepository subjectRepository;
-    private final YearService yearService;
-    private final SemesterService semesterService;
+    private final SemesterRepository semesterRepository;
 
-    public List<Subject> getAllSubjects() {
-        return subjectRepository.findAll();
+    public SubjectService(SubjectRepository subjectRepository, @Lazy SemesterRepository semesterRepository) {
+        this.subjectRepository = subjectRepository;
+        this.semesterRepository = semesterRepository;
+    }
+
+    private void mapDtoToEntity(SubjectDTO dto, Subject entity) {
+        entity.setName(dto.getName());
+        entity.setCode(dto.getCode());
+        entity.setPriority(dto.getPriority());
+        entity.setCategory(dto.getCategory());
+
+        if (dto.getSemesterId() == null) {
+            throw new IllegalArgumentException("Semester ID is required.");
+        }
+        Semester semester = semesterRepository.findById(dto.getSemesterId())
+                .orElseThrow(() -> new EntityNotFoundException("Semester not found with id: " + dto.getSemesterId()));
+        entity.setSemester(semester);
+    }
+    
+    @Transactional(readOnly = true)
+    public List<SubjectDTO> getAllSubjects() {
+        return subjectRepository.findAll().stream().map(SubjectDTO::new).collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public SubjectDTO getSubjectById(Long id) {
+        return subjectRepository.findById(id).map(SubjectDTO::new)
+                .orElseThrow(() -> new EntityNotFoundException("Subject not found with id: " + id));
     }
 
     @Transactional
-    public List<Subject> createOrUpdateBulk(List<SubjectDTO> dtos) {
-        Set<Long> yearIds = dtos.stream().map(SubjectDTO::getYearId).collect(Collectors.toSet());
-        Set<Long> semIds  = dtos.stream().map(SubjectDTO::getSemesterId).collect(Collectors.toSet());
-
-        Map<Long, Year> years = yearService.findAllByIds(yearIds).stream()
-                .collect(Collectors.toMap(Year::getId, y -> y));
-        Map<Long, Semester> sems = semesterService.findAllByIds(semIds).stream()
-                .collect(Collectors.toMap(Semester::getId, s -> s));
-
-        // First pass: build/refresh entities and collect for ranking if priority missing
-        List<Subject> batch = new ArrayList<>(dtos.size());
-        record Pending(Subject s, int difficulty) {}
-        Map<String, List<Pending>> groupForRank = new HashMap<>();
-
-        for (SubjectDTO d : dtos) {
-            Subject s = subjectRepository.findByCode(d.getCode()).orElseGet(Subject::new);
-            s.setCode(d.getCode());
-            s.setName(d.getName());
-
-            try { s.setType(SubjectType.valueOf(d.getType().toUpperCase())); }
-            catch (IllegalArgumentException e) { throw new IllegalArgumentException("Invalid SubjectType: " + d.getType()); }
-
-            s.setCredits(d.getCredits());
-
-            try { s.setCategory(SubjectCategory.valueOf(d.getCategory().toUpperCase())); }
-            catch (IllegalArgumentException e) { throw new IllegalArgumentException("Invalid SubjectCategory: " + d.getCategory()); }
-
-            Year y = years.get(d.getYearId());
-            if (y == null) throw new IllegalArgumentException("Invalid yearId: " + d.getYearId());
-            s.setYear(y);
-
-            Semester sem = sems.get(d.getSemesterId());
-            if (sem == null) throw new IllegalArgumentException("Invalid semesterId: " + d.getSemesterId());
-            s.setSemester(sem);
-
-            if (d.getPriority() != null) {
-                s.setPriority(d.getPriority());
-            } else {
-                // compute difficulty: credits + categoryWeight + typeWeight
-                int categoryWeight = switch (s.getCategory()) {
-                    case REGULAR -> 2;
-                    case PROGRAM_ELECTIVE -> 1;
-                    case OPEN_ELECTIVE -> 0;
-                };
-                int typeWeight = (s.getType() == SubjectType.THEORY) ? 1 : 0;
-                int difficulty = s.getCredits() + categoryWeight + typeWeight;
-                String key = y.getId() + "-" + sem.getId();
-                groupForRank.computeIfAbsent(key, k -> new ArrayList<>()).add(new Pending(s, difficulty));
-            }
-
-            batch.add(s);
-        }
-
-        // Second pass: rank within each year-sem by difficulty desc, assign priority 1..N
-        for (var e : groupForRank.entrySet()) {
-            List<Pending> list = e.getValue();
-            list.sort(Comparator.<Pending>comparingInt(p -> -p.difficulty)); // higher difficulty first
-            int rank = 1;
-            for (Pending p : list) {
-                p.s.setPriority(rank++);
-            }
-        }
-
-        return subjectRepository.saveAll(batch);
+    public SubjectDTO createSubject(SubjectDTO subjectDTO) {
+        subjectRepository.findByCode(subjectDTO.getCode()).ifPresent(s -> {
+            throw new IllegalArgumentException("Subject with code " + subjectDTO.getCode() + " already exists.");
+        });
+        Subject newSubject = new Subject();
+        mapDtoToEntity(subjectDTO, newSubject);
+        return new SubjectDTO(subjectRepository.save(newSubject));
     }
 
-    public Subject updateCredits(Long id, Integer credits) {
-        Subject s = subjectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Subject not found: " + id));
-        s.setCredits(credits);
-        return subjectRepository.save(s);
+    @Transactional
+    public List<SubjectDTO> createSubjectsBulk(List<SubjectDTO> subjectDTOs) {
+        List<Subject> subjectsToSave = subjectDTOs.stream().map(dto -> {
+            Subject subject = new Subject();
+            mapDtoToEntity(dto, subject);
+            return subject;
+        }).collect(Collectors.toList());
+        return subjectRepository.saveAll(subjectsToSave).stream().map(SubjectDTO::new).collect(Collectors.toList());
+    }
+
+    @Transactional
+    public SubjectDTO updateSubject(Long id, SubjectDTO subjectDTO) {
+        Subject subjectToUpdate = subjectRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Subject not found with id: " + id));
+        mapDtoToEntity(subjectDTO, subjectToUpdate);
+        return new SubjectDTO(subjectRepository.save(subjectToUpdate));
+    }
+
+    @Transactional
+    public void deleteSubject(Long id) {
+        if (!subjectRepository.existsById(id)) {
+            throw new EntityNotFoundException("Cannot delete. Subject not found with id: " + id);
+        }
+        subjectRepository.deleteById(id);
     }
 }

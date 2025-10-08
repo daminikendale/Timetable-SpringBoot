@@ -1,37 +1,37 @@
 package com.rspc.timetable.services;
 
-import com.rspc.timetable.entities.CourseOffering;
-import com.rspc.timetable.repositories.CourseOfferingRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-
+import com.rspc.timetable.dto.CourseOfferingDTO;
 import java.util.List;
 
-@Service
-@RequiredArgsConstructor
-public class CourseOfferingService {
-    private final CourseOfferingRepository repo;
+/**
+ * Interface for managing CourseOfferings.
+ * Defines the contract for creating, retrieving, and deleting course offerings.
+ */
+public interface CourseOfferingService {
 
-    public CourseOffering defineOffering(CourseOffering co) {
-        return repo.save(co);
-    }
+    /**
+     * Creates a single course offering from a DTO.
+     */
+    CourseOfferingDTO createCourseOffering(CourseOfferingDTO dto);
 
-    public List<CourseOffering> defineOfferings(List<CourseOffering> offerings) {
-        return repo.saveAll(offerings);
-    }
+    /**
+     * Creates multiple course offerings from a list of DTOs.
+     * This is the method that must be added to your interface.
+     */
+    List<CourseOfferingDTO> createBulkCourseOfferings(List<CourseOfferingDTO> dtos);
 
-    // ID-based existence check without division
-    public boolean existsBySubjectYearSemester(Long subjectId, Long yearId, Long semesterId) {
-        return repo.existsBySubjectIdAndYearIdAndSemesterId(subjectId, yearId, semesterId);
-    }
+    /**
+     * Retrieves all course offerings.
+     */
+    List<CourseOfferingDTO> getAllOfferings();
 
-    public List<CourseOffering> getAll() {
-        return repo.findAll();
-    }
-
-    // Removed: forDivision(Long divisionId)
-
-    public List<CourseOffering> forSemester(Long yearId, Long semId) {
-        return repo.findByYearIdAndSemesterId(yearId, semId);
-    }
+    /**
+     * Retrieves a single course offering by its ID.
+     */
+    CourseOfferingDTO getOfferingById(Long id);
+    
+    /**
+     * Deletes a course offering by its ID.
+     */
+    void deleteOffering(Long id);
 }
