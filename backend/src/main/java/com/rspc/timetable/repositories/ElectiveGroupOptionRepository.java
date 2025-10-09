@@ -3,10 +3,8 @@ package com.rspc.timetable.repositories;
 import com.rspc.timetable.entities.ElectiveGroupOption;
 import com.rspc.timetable.entities.ElectiveGroupOptionId;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
-import java.util.List;
-
-public interface ElectiveGroupOptionRepository
-        extends JpaRepository<ElectiveGroupOption, ElectiveGroupOptionId> {
-    List<ElectiveGroupOption> findByElectiveGroup_Id(Long groupId);
+@Repository
+public interface ElectiveGroupOptionRepository extends JpaRepository<ElectiveGroupOption, ElectiveGroupOptionId> {
 }

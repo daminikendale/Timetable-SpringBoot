@@ -3,15 +3,31 @@ package com.rspc.timetable.repositories;
 import com.rspc.timetable.entities.ScheduledClass;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+import java.time.DayOfWeek;
 import java.util.List;
 
 @Repository
 public interface ScheduledClassRepository extends JpaRepository<ScheduledClass, Long> {
+    
+    // For the substitution service
+    List<ScheduledClass> findAllByTeacherIdAndDayOfWeekAndTimeSlotIdBetween(
+        Long teacherId, 
+        DayOfWeek dayOfWeek, 
+        Long startSlotId, 
+        Long endSlotId
+    );
 
-    // This method is correct
-    List<ScheduledClass> findByDivisionIdOrderByDayOfWeekAscTimeSlotAsc(Long divisionId);
+    // For the substitution service
+    List<ScheduledClass> findByTeacherIdAndDayOfWeekAndTimeSlotId(
+        Long teacherId, 
+        DayOfWeek dayOfWeek, 
+        Long timeSlotId
+    );
 
-    // THIS IS THE CORRECTED METHOD NAME
-    // It now correctly looks for the 'teacher' field on the ScheduledClass entity
+    // For fetching a teacher's schedule, sorted
     List<ScheduledClass> findByTeacherIdOrderByDayOfWeekAscTimeSlotAsc(Long teacherId);
+
+    // ✅ ADD THIS NEW METHOD TO FIX THE CURRENT ERROR
+    // For fetching a division's schedule, sorted
+    List<ScheduledClass> findByDivisionIdOrderByDayOfWeekAscTimeSlotAsc(Long divisionId);
 }

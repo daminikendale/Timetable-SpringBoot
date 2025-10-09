@@ -45,7 +45,7 @@ public class ScheduledClass {
     
     // You'll need this enum if it's not already in the file
     public enum SessionType {
-        THEORY,
+        LECTURE,
         LAB,
         TUTORIAL
     }
