@@ -8,6 +8,7 @@ import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -103,16 +104,16 @@ public class CourseOfferingServiceImpl implements CourseOfferingService {
     @Override
     @Transactional(readOnly = true)
     public List<CourseOfferingDTO> getOfferingsBySemesterNumbers(List<Integer> semesterNumbers) {
-        // ✅ FIX: Calling the new, explicitly defined repository method
-        return courseOfferingRepository.findOfferingsBySemesterNumbers(semesterNumbers)
+        // ✅ FIX: Using the correct Spring Data JPA conventional method name
+        return courseOfferingRepository.findBySubject_Semester_SemesterNumberIn(semesterNumbers)
                 .stream().map(CourseOfferingDTO::new).collect(Collectors.toList());
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<CourseOfferingDTO> getOfferingsBySubjectAndSemesters(Long subjectId, List<Integer> semesterNumbers) {
-        // ✅ FIX: Calling the new, explicitly defined repository method
-        return courseOfferingRepository.findOfferingsBySubjectAndSemesterNumbers(subjectId, semesterNumbers)
+        // ✅ FIX: Using the correct Spring Data JPA conventional method name
+        return courseOfferingRepository.findBySubjectIdAndSemester_SemesterNumberIn(subjectId, semesterNumbers)
                 .stream().map(CourseOfferingDTO::new).collect(Collectors.toList());
     }
 }

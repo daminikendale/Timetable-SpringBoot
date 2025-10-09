@@ -18,7 +18,7 @@ public class TimetableGeneratorService {
 
     private static final Logger logger = LoggerFactory.getLogger(TimetableGeneratorService.class);
 
-    // Repositories
+    // (Repositories remain the same)
     private final ScheduledClassRepository scheduledClassRepository;
     private final CourseOfferingRepository courseOfferingRepository;
     private final ClassroomRepository classroomRepository;
@@ -33,20 +33,17 @@ public class TimetableGeneratorService {
     @Transactional
     public String generateTimetableFor(SemesterType semesterType) {
         try {
-            // =================================================================
             // 1. SETUP PHASE
-            // =================================================================
             List<Integer> targetSemesterNumbers = semesterType == SemesterType.ODD ? List.of(1, 3, 5, 7) : List.of(2, 4, 6, 8);
             logger.info("Starting timetable generation for {} semesters: {}", semesterType, targetSemesterNumbers);
 
             scheduledClassRepository.deleteAllInBatch();
             logger.info("Cleared all existing scheduled classes.");
-
-            // Fetch and sanitize data immediately
-            List<CourseOffering> allCourseOfferings = courseOfferingRepository.findOfferingsBySemesterNumbers(targetSemesterNumbers)
+            
+            List<CourseOffering> allCourseOfferings = courseOfferingRepository.findBySubject_Semester_SemesterNumberIn(targetSemesterNumbers)
                 .stream().filter(co -> co.getSubject() != null && co.getSubject().getSemester() != null)
                 .collect(Collectors.toList());
-                
+
             List<Classroom> allClassrooms = classroomRepository.findAll();
             List<TimeSlot> allTimeSlots = timeSlotRepository.findByIsBreak(false);
             allTimeSlots.sort(Comparator.comparing(TimeSlot::getStartTime));
@@ -59,16 +56,20 @@ public class TimetableGeneratorService {
                     Collectors.mapping(TeacherSubjectAllocation::getTeacher, Collectors.toList())
                 ));
 
-            Map<Long, List<Division>> semesterToDivisionsMap = semesterDivisionRepository.findBySemester_SemesterNumberIn(targetSemesterNumbers).stream()
+            // ✅✅✅ THE FIX: Load ALL semester-to-division mappings ✅✅✅
+            // This ensures that when a course for any semester is processed, its corresponding divisions are available.
+            Map<Long, List<Division>> semesterToDivisionsMap = semesterDivisionRepository.findAll().stream()
                 .filter(sd -> sd.getSemester() != null && sd.getDivision() != null)
                 .collect(Collectors.groupingBy(
                     sd -> sd.getSemester().getId(),
                     Collectors.mapping(SemesterDivision::getDivision, Collectors.toList())
                 ));
+            logger.info("Loaded {} semester-to-division mappings.", semesterToDivisionsMap.size());
 
-            // =================================================================
-            // 2. PRE-PROCESSING FOR ELECTIVES
-            // =================================================================
+
+            // 2. PRE-PROCESSING FOR ELECTIVES (logic is sound)
+            // ... (rest of the method remains the same)
+            
             List<ElectiveGroupOption> allElectiveOptions = electiveGroupOptionRepository.findAll();
             Set<Long> allElectiveSubjectIds = allElectiveOptions.stream()
                 .map(opt -> opt.getSubject().getId())
@@ -84,9 +85,7 @@ public class TimetableGeneratorService {
 
             List<ScheduledClass> generatedSchedule = new ArrayList<>();
 
-            // =================================================================
             // 3. CORE SCHEDULING LOGIC
-            // =================================================================
             logger.info("Scheduling {} elective groups...", electivesByGroup.size());
             for (List<CourseOffering> electiveGroup : electivesByGroup.values()) {
                 scheduleElectiveGroup(electiveGroup, generatedSchedule, allClassrooms, allTimeSlots, weekDays, semesterToDivisionsMap, subjectToTeachersMap);
@@ -97,9 +96,7 @@ public class TimetableGeneratorService {
                 scheduleIndividualCourse(offering, generatedSchedule, allClassrooms, allTimeSlots, weekDays, semesterToDivisionsMap, subjectToTeachersMap);
             }
 
-            // =================================================================
             // 4. FINALIZATION
-            // =================================================================
             scheduledClassRepository.saveAll(generatedSchedule);
             logger.info("Successfully generated and saved {} new scheduled classes.", generatedSchedule.size());
             return "Timetable for " + semesterType + " semesters generated successfully with " + generatedSchedule.size() + " entries.";
@@ -110,12 +107,14 @@ public class TimetableGeneratorService {
         }
     }
 
+    // ... (The rest of the helper methods are correct and remain unchanged)
+
     private Long getElectiveGroupIdForSubject(Subject subject, List<ElectiveGroupOption> allOptions) {
         return allOptions.stream()
             .filter(opt -> opt.getSubject().getId().equals(subject.getId()))
             .map(opt -> opt.getElectiveGroup().getId())
             .findFirst()
-            .orElse(-1L); // Should not happen if logic is correct
+            .orElse(-1L);
     }
     
     private void scheduleIndividualCourse(CourseOffering offering, List<ScheduledClass> generatedSchedule, List<Classroom> allClassrooms, List<TimeSlot> allTimeSlots, List<DayOfWeek> weekDays, Map<Long, List<Division>> semesterToDivisionsMap, Map<Long, List<Teacher>> subjectToTeachersMap){
@@ -132,12 +131,12 @@ public class TimetableGeneratorService {
             return;
         }
 
-        Division targetDivision = applicableDivisions.get(0);
-        Teacher assignedTeacher = availableTeachers.get(0);
-
-        scheduleSessionType(offering, assignedTeacher, targetDivision, SessionType.LECTURE, offering.getLecPerWeek(), 1, generatedSchedule, allClassrooms, allTimeSlots, weekDays);
-        scheduleSessionType(offering, assignedTeacher, targetDivision, SessionType.LAB, offering.getLabPerWeek(), 2, generatedSchedule, allClassrooms, allTimeSlots, weekDays);
-        scheduleSessionType(offering, assignedTeacher, targetDivision, SessionType.TUTORIAL, offering.getTutPerWeek(), 1, generatedSchedule, allClassrooms, allTimeSlots, weekDays);
+        for (Division targetDivision : applicableDivisions) {
+            Teacher assignedTeacher = availableTeachers.get(0);
+            scheduleSessionType(offering, assignedTeacher, targetDivision, SessionType.LECTURE, offering.getLecPerWeek(), 1, generatedSchedule, allClassrooms, allTimeSlots, weekDays);
+            scheduleSessionType(offering, assignedTeacher, targetDivision, SessionType.LAB, offering.getLabPerWeek(), 2, generatedSchedule, allClassrooms, allTimeSlots, weekDays);
+            scheduleSessionType(offering, assignedTeacher, targetDivision, SessionType.TUTORIAL, offering.getTutPerWeek(), 1, generatedSchedule, allClassrooms, allTimeSlots, weekDays);
+        }
     }
     
     private void scheduleSessionType(CourseOffering offering, Teacher teacher, Division division, SessionType sessionType, int hoursToSchedule, int blockLength, List<ScheduledClass> generatedSchedule, List<Classroom> allClassrooms, List<TimeSlot> allTimeSlots, List<DayOfWeek> weekDays) {
@@ -223,7 +222,6 @@ public class TimetableGeneratorService {
 
                         if (classroom != null && isClassroomAvailable(classroom, day, potentialBlock.get(0), generatedSchedule)) {
                             for (TimeSlot slot : potentialBlock) {
-                                // Add to schedule
                                 ScheduledClass newClass = new ScheduledClass();
                                 newClass.setCourseOffering(offering);
                                 newClass.setTeacher(teacher);
@@ -315,4 +313,5 @@ public class TimetableGeneratorService {
     private boolean isDivisionAvailable(Division division, DayOfWeek day, TimeSlot slot, List<ScheduledClass> currentSchedule) {
         return currentSchedule.stream().noneMatch(sc -> sc.getDivision().getId().equals(division.getId()) && sc.getDayOfWeek() == day && sc.getTimeSlot().getId().equals(slot.getId()));
     }
+
 }
