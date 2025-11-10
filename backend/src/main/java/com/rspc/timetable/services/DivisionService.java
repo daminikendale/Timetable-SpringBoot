@@ -17,7 +17,6 @@ public class DivisionService {
 
     private final DivisionRepository divisionRepository;
 
-    // Helper method to convert an entity to a DTO
     private DivisionDTO convertToDTO(Division division) {
         return new DivisionDTO(division.getId(), division.getDivisionName());
     }
@@ -25,62 +24,46 @@ public class DivisionService {
     @Transactional(readOnly = true)
     public List<DivisionDTO> getAllDivisions() {
         return divisionRepository.findAll().stream()
-            .map(this::convertToDTO)
-            .collect(Collectors.toList());
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
+
+    // ✅ NEW METHOD: Get divisions by year ID
+    @Transactional(readOnly = true)
+    public List<DivisionDTO> getDivisionsByYearId(Long yearId) {
+        return divisionRepository.findByYearId(yearId).stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
     public DivisionDTO getDivisionById(Long id) {
         return divisionRepository.findById(id)
-            .map(this::convertToDTO)
-            .orElseThrow(() -> new EntityNotFoundException("Division not found with id: " + id));
+                .map(this::convertToDTO)
+                .orElseThrow(() -> new EntityNotFoundException("Division not found with id: " + id));
     }
 
     @Transactional
     public DivisionDTO createDivision(DivisionDTO divisionDTO) {
-        // Prevent creating a division with a duplicate name
         if (divisionRepository.findByDivisionName(divisionDTO.getDivisionName()).isPresent()) {
-            throw new IllegalArgumentException("Division with name '" + divisionDTO.getDivisionName() + "' already exists.");
+            throw new IllegalArgumentException("Division already exists.");
         }
-        
+
         Division newDivision = new Division();
         newDivision.setDivisionName(divisionDTO.getDivisionName());
-        
-        Division savedDivision = divisionRepository.save(newDivision);
-        return convertToDTO(savedDivision);
+        return convertToDTO(divisionRepository.save(newDivision));
     }
-    
+
     @Transactional
     public DivisionDTO updateDivision(Long id, DivisionDTO divisionDTO) {
-        Division divisionToUpdate = divisionRepository.findById(id)
-            .orElseThrow(() -> new EntityNotFoundException("Division not found with id: " + id));
-            
-        divisionToUpdate.setDivisionName(divisionDTO.getDivisionName());
-        
-        Division updatedDivision = divisionRepository.save(divisionToUpdate);
-        return convertToDTO(updatedDivision);
+        Division division = divisionRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Division not found"));
+        division.setDivisionName(divisionDTO.getDivisionName());
+        return convertToDTO(divisionRepository.save(division));
     }
 
     @Transactional
     public void deleteDivision(Long id) {
-        if (!divisionRepository.existsById(id)) {
-            throw new EntityNotFoundException("Cannot delete. Division not found with id: " + id);
-        }
         divisionRepository.deleteById(id);
-    }
-    
-    @Transactional
-    public List<DivisionDTO> saveAllDivisions(List<DivisionDTO> divisionDTOs) {
-        List<Division> divisions = divisionDTOs.stream().map(dto -> {
-            Division division = new Division();
-            division.setDivisionName(dto.getDivisionName());
-            return division;
-        }).collect(Collectors.toList());
-        
-        List<Division> savedDivisions = divisionRepository.saveAll(divisions);
-        
-        return savedDivisions.stream()
-            .map(this::convertToDTO)
-            .collect(Collectors.toList());
     }
 }

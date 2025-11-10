@@ -9,6 +9,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/years")
+@CrossOrigin(origins = "http://localhost:5173")  // ADD THIS LINE TO ALLOW REACT FRONTEND
 public class YearController {
 
     private final YearService yearService;
@@ -49,5 +50,4 @@ public class YearController {
     public List<YearDTO> getAllYearDTOs() {
         return yearService.getAllYearDTOs();
     }
-
 }

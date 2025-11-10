@@ -1,6 +1,7 @@
 package com.rspc.timetable.services;
 
 import com.rspc.timetable.dto.ScheduledClassDTO;
+import com.rspc.timetable.entities.ScheduledClass;
 import com.rspc.timetable.repositories.ScheduledClassRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,11 @@ public class ScheduledClassService {
                 .map(ScheduledClassDTO::new)
                 .collect(Collectors.toList());
     }
+    public void deleteByDivision(Long divisionId) {
+    List<ScheduledClass> classes = scheduledClassRepository.findByDivisionId(divisionId);
+    scheduledClassRepository.deleteAll(classes);
+}
+
 
     @Transactional(readOnly = true)
     public List<ScheduledClassDTO> getTimetableForTeacher(Long teacherId) {

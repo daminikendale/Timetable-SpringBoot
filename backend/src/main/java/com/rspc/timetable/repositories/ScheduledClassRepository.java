@@ -27,6 +27,9 @@ public interface ScheduledClassRepository extends JpaRepository<ScheduledClass, 
     // For fetching a teacher's schedule, sorted
     List<ScheduledClass> findByTeacherIdOrderByDayOfWeekAscTimeSlotAsc(Long teacherId);
 
+
+    List<ScheduledClass> findByDivisionId(Long divisionId);
+
     // ✅ ADD THIS NEW METHOD TO FIX THE CURRENT ERROR
     // For fetching a division's schedule, sorted
     List<ScheduledClass> findByDivisionIdOrderByDayOfWeekAscTimeSlotAsc(Long divisionId);

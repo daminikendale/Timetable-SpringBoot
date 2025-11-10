@@ -10,7 +10,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/divisions")
-@CrossOrigin(origins = "http://localhost:5173") // Enables CORS for your React frontend
+@CrossOrigin(origins = "http://localhost:5173")
 public class DivisionController {
 
     private final DivisionService divisionService;
@@ -19,44 +19,38 @@ public class DivisionController {
         this.divisionService = divisionService;
     }
 
-    // GET /api/divisions - Get all divisions
+    // UPDATED METHOD: Now accepts yearId parameter to filter divisions
     @GetMapping
-    public ResponseEntity<List<DivisionDTO>> getAllDivisions() {
-        return ResponseEntity.ok(divisionService.getAllDivisions());
+    public ResponseEntity<List<DivisionDTO>> getAllDivisions(@RequestParam(required = false) Long yearId) {
+        if (yearId != null) {
+            // If yearId is provided, return divisions for that year only
+            return ResponseEntity.ok(divisionService.getDivisionsByYearId(yearId));
+        } else {
+            // If no yearId, return all divisions
+            return ResponseEntity.ok(divisionService.getAllDivisions());
+        }
     }
 
-    // GET /api/divisions/{id} - Get a single division by ID
     @GetMapping("/{id}")
     public ResponseEntity<DivisionDTO> getDivisionById(@PathVariable Long id) {
-        DivisionDTO division = divisionService.getDivisionById(id);
-        return ResponseEntity.ok(division);
+        return ResponseEntity.ok(divisionService.getDivisionById(id));
     }
 
-    // POST /api/divisions - Create a new division
     @PostMapping
     public ResponseEntity<DivisionDTO> createDivision(@RequestBody DivisionDTO divisionDTO) {
         DivisionDTO createdDivision = divisionService.createDivision(divisionDTO);
         return new ResponseEntity<>(createdDivision, HttpStatus.CREATED);
     }
-    
-    // PUT /api/divisions/{id} - Update an existing division
+
     @PutMapping("/{id}")
     public ResponseEntity<DivisionDTO> updateDivision(@PathVariable Long id, @RequestBody DivisionDTO divisionDTO) {
         DivisionDTO updatedDivision = divisionService.updateDivision(id, divisionDTO);
         return ResponseEntity.ok(updatedDivision);
     }
 
-    // DELETE /api/divisions/{id} - Delete a division
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteDivision(@PathVariable Long id) {
         divisionService.deleteDivision(id);
         return ResponseEntity.noContent().build();
-    }
-
-    // POST /api/divisions/bulk - Bulk create divisions
-    @PostMapping("/bulk")
-    public ResponseEntity<List<DivisionDTO>> createDivisionsBulk(@RequestBody List<DivisionDTO> divisionDTOs) {
-        List<DivisionDTO> savedDivisions = divisionService.saveAllDivisions(divisionDTOs);
-        return new ResponseEntity<>(savedDivisions, HttpStatus.CREATED);
     }
 }
