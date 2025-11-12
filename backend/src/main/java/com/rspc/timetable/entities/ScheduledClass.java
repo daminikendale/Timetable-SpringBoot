@@ -13,17 +13,11 @@ public class ScheduledClass {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    public enum SessionType {
-        LECTURE,
-        TUTORIAL,
-        LAB,
-        SHORT_BREAK,  // NEW
-        LUNCH         // NEW
-    }
+    // Remove the nested enum here if it exists
 
     @Enumerated(EnumType.STRING)
     @Column(name = "session_type", nullable = false)
-    private SessionType sessionType;
+    private SessionType sessionType; // top-level enum
 
     @Enumerated(EnumType.STRING)
     @Column(name = "day_of_week", nullable = false)
@@ -33,7 +27,6 @@ public class ScheduledClass {
     @JoinColumn(name = "division_id", nullable = false)
     private Division division;
 
-    // Allow null for SHORT_BREAK/LUNCH rows
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "teacher_id")
     private Teacher teacher;
@@ -43,14 +36,14 @@ public class ScheduledClass {
     private Classroom classroom;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "course_offering_id")
+    @JoinColumn(name = "batch_id")
+    private Batch batch;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "course_offering_id", nullable = false)
     private CourseOffering courseOffering;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "time_slot_id", nullable = false)
     private TimeSlot timeSlot;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "batch_id")
-    private Batch batch;
 }

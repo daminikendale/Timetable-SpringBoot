@@ -13,7 +13,9 @@ import java.time.DayOfWeek;
 @Entity
 @Getter
 @Setter
-@PlanningEntity
+@PlanningEntity(
+    difficultyComparatorClass = PlannedClassDifficultyComparator.class
+)
 @Table(name = "planned_classes")
 public class PlannedClass {
 
@@ -24,12 +26,10 @@ public class PlannedClass {
     @PlanningId
     private Long planningId;
 
-    // Problem-fact relations (fixed)
     @ManyToOne private CourseOffering courseOffering;
     @ManyToOne private Division       division;
     @ManyToOne private Batch          batch;
 
-    // Planning variables
     @ManyToOne
     @PlanningVariable(valueRangeProviderRefs = {"teacherRange"})
     private Teacher teacher;
@@ -46,14 +46,11 @@ public class PlannedClass {
     @PlanningVariable(valueRangeProviderRefs = {"dayRange"})
     private DayOfWeek day;
 
-    // Additional properties used by constraints/optimizer
     @Enumerated(EnumType.STRING)
-    private ScheduledClass.SessionType sessionType;
+    private SessionType sessionType;
 
-    // 1 for lecture/tutorial, 2 for double-slot labs, etc.
     private int lengthSlots = 1;
 
-    // Aliases used by constraints/optimizer
     public Classroom getRoom() { return classroom; }
     public void setRoom(Classroom room) { this.classroom = room; }
     public TimeSlot getStartSlot() { return timeSlot; }

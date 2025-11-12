@@ -1,5 +1,6 @@
 package com.rspc.timetable.optaplanner;
 
+import com.rspc.timetable.entities.SessionType;
 import com.rspc.timetable.entities.ScheduledClass;
 import org.optaplanner.core.api.score.buildin.hardsoft.HardSoftScore;
 import org.optaplanner.core.api.score.stream.*;
@@ -25,7 +26,6 @@ public class TimetableConstraintProvider implements ConstraintProvider {
         };
     }
 
-    // HARD
     private Constraint teacherConflict(ConstraintFactory f) {
         return f.forEachUniquePair(PlannedClass.class,
                 Joiners.equal(PlannedClass::getTeacher),
@@ -57,8 +57,8 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                 Joiners.equal(PlannedClass::getDivision, ScheduledClass::getDivision),
                 Joiners.equal(PlannedClass::getDay, ScheduledClass::getDayOfWeek))
             .filter((pc, sc) ->
-                (sc.getSessionType()==ScheduledClass.SessionType.SHORT_BREAK
-              || sc.getSessionType()==ScheduledClass.SessionType.LUNCH)
+                (sc.getSessionType()==SessionType.SHORT_BREAK
+              || sc.getSessionType()==SessionType.LUNCH)
               && timeOverlap(pc, sc))
             .penalize("Overlap with break/lunch", HardSoftScore.ONE_HARD);
     }
@@ -96,7 +96,6 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             .penalize("Once per day (batch)", HardSoftScore.ONE_HARD, (key, cnt) -> cnt - 1);
     }
 
-    // SOFT
     private Constraint minimizeDivisionIdle(ConstraintFactory f) {
         return f.forEach(PlannedClass.class)
             .filter(pc -> pc.getStartSlot()!=null && pc.getDay()!=null)
@@ -119,7 +118,6 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                     + pc.getStartSlot().getStartTime().getMinute()/15);
     }
 
-    // helpers
     private boolean isRoomValid(PlannedClass pc) {
         String type = pc.getRoom().getType();
         if (type == null) return false;
@@ -153,7 +151,9 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     private LocalTime endTime(PlannedClass pc) {
         LocalTime end = pc.getStartSlot().getEndTime();
         if (pc.getLengthSlots()==2) {
-            long dur = Duration.between(pc.getStartSlot().getStartTime(), pc.getStartSlot().getEndTime()).toMinutes();
+            long dur = java.time.Duration.between(
+                pc.getStartSlot().getStartTime(), pc.getStartSlot().getEndTime()
+            ).toMinutes();
             end = end.plusMinutes(dur);
         }
         return end;

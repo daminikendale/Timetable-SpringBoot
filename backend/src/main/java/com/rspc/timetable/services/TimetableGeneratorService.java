@@ -34,10 +34,10 @@ public class TimetableGeneratorService {
     private static final class Event {
         final CourseOffering offering;
         final Division division;
-        final Batch batch; // null for division-level lecture
-        final ScheduledClass.SessionType type; // LECTURE/TUTORIAL/LAB
-        final int len; // block length in slots (1 or 2)
-        Event(CourseOffering o, Division d, Batch b, ScheduledClass.SessionType t, int len) {
+        final Batch batch;          // null for division-level lecture
+        final SessionType type;     // LECTURE/TUTORIAL/LAB
+        final int len;              // block length in slots (1 or 2)
+        Event(CourseOffering o, Division d, Batch b, SessionType t, int len) {
             this.offering = o; this.division = d; this.batch = b; this.type = t; this.len = len;
         }
     }
@@ -54,7 +54,11 @@ public class TimetableGeneratorService {
         }
     }
 
-    private static final class Assign { final Event e; final Placement p; Assign(Event e, Placement p){this.e=e; this.p=p;} }
+    private static final class Assign {
+        final Event e;
+        final Placement p;
+        Assign(Event e, Placement p){ this.e=e; this.p=p; }
+    }
 
     public enum SemesterType { ODD, EVEN }
 
@@ -122,7 +126,7 @@ public class TimetableGeneratorService {
         boolean[][][] roomOcc = new boolean[rooms.size()][DAYS][S];
         boolean[][][] teachOcc= new boolean[allTeachers.size()][DAYS][S];
 
-        // 1) Fixed break/lunch (4-group assignment): (sb, ln) ∈ {(0,0),(0,1),(1,0),(1,1)}
+        // 1) Fixed break/lunch (4-group assignment)
         int SB_10_00 = findSlotIndex(slots, 10, 0, 10, 15);
         int SB_11_00 = findSlotIndex(slots, 11, 0, 11, 15);
         int LN_12_15 = findSlotIndex(slots, 12, 15, 13, 15);
@@ -146,7 +150,7 @@ public class TimetableGeneratorService {
                 divBusy[di][day][lnIdx] = true;
 
                 fixedRows.add(ScheduledClass.builder()
-                        .sessionType(ScheduledClass.SessionType.SHORT_BREAK)
+                        .sessionType(SessionType.SHORT_BREAK)
                         .division(div)
                         .dayOfWeek(DayOfWeek.of(day+1))
                         .timeSlot(slots.get(sbIdx))
@@ -154,7 +158,7 @@ public class TimetableGeneratorService {
                         .build());
 
                 fixedRows.add(ScheduledClass.builder()
-                        .sessionType(ScheduledClass.SessionType.LUNCH)
+                        .sessionType(SessionType.LUNCH)
                         .division(div)
                         .dayOfWeek(DayOfWeek.of(day+1))
                         .timeSlot(slots.get(lnIdx))
@@ -171,12 +175,12 @@ public class TimetableGeneratorService {
         List<Event> events = new ArrayList<>();
         for (CourseOffering co : offerings) {
             for (Division d : divisions) {
-                for (int i=0;i<co.getLecPerWeek();i++) events.add(new Event(co,d,null, ScheduledClass.SessionType.LECTURE,1));
+                for (int i=0;i<co.getLecPerWeek();i++) events.add(new Event(co,d,null, SessionType.LECTURE,1));
                 for (Batch b : batchesByDiv.getOrDefault(d.getId(), List.of())) {
-                    for (int i=0;i<co.getTutPerWeek();i++) events.add(new Event(co,d,b, ScheduledClass.SessionType.TUTORIAL,1));
+                    for (int i=0;i<co.getTutPerWeek();i++) events.add(new Event(co,d,b, SessionType.TUTORIAL,1));
                     int lab = co.getLabPerWeek();
-                    for (int k=0;k<lab/2;k++) events.add(new Event(co,d,b, ScheduledClass.SessionType.LAB,2));
-                    if (lab%2!=0) events.add(new Event(co,d,b, ScheduledClass.SessionType.LAB,1));
+                    for (int k=0;k<lab/2;k++) events.add(new Event(co,d,b, SessionType.LAB,2));
+                    if (lab%2!=0) events.add(new Event(co,d,b, SessionType.LAB,1));
                 }
             }
         }
@@ -192,13 +196,13 @@ public class TimetableGeneratorService {
 
         // 4) Candidate domains (room type via String)
         List<Classroom> lectRooms = rooms.stream()
-                .filter(r -> roomMatches(r.getType(), ScheduledClass.SessionType.LECTURE))
+                .filter(r -> roomMatches(r.getType(), SessionType.LECTURE))
                 .toList();
         List<Classroom> tutRooms  = rooms.stream()
-                .filter(r -> roomMatches(r.getType(), ScheduledClass.SessionType.TUTORIAL))
+                .filter(r -> roomMatches(r.getType(), SessionType.TUTORIAL))
                 .toList();
         List<Classroom> labRooms  = rooms.stream()
-                .filter(r -> roomMatches(r.getType(), ScheduledClass.SessionType.LAB))
+                .filter(r -> roomMatches(r.getType(), SessionType.LAB))
                 .toList();
 
         Map<Event,List<Placement>> domains = new HashMap<>();
@@ -229,8 +233,9 @@ public class TimetableGeneratorService {
         }
 
         // 5) Solve MRV + forward checking + idle-time scoring
+        List<Assign> sol = new ArrayList<>();
         boolean ok = solve(events, domains, divBusy, batchOcc, roomOcc, teachOcc,
-                divIdx, batchIdx, roomIdx, teacherIdx, perDayCount, perDayCap);
+                divIdx, batchIdx, roomIdx, teacherIdx, perDayCount, perDayCap, sol);
         if (!ok) throw new IllegalStateException("No feasible timetable found");
 
         // 6) Persist: clear existing rows for these divisions, then save breaks/lunch + classes
@@ -240,22 +245,21 @@ public class TimetableGeneratorService {
             scheduledClassRepository.deleteAll(existing);
         }
         List<ScheduledClass> toSave = new ArrayList<>(fixedRows);
-        for (Event e : events) {
-            // domains.get(e) was consumed during solve via recursion; collect chosen placements from occupancy instead
+        for (Assign a : sol) {
+            for (TimeSlot ts : a.p.block) {
+                ScheduledClass sc = ScheduledClass.builder()
+                        .courseOffering(a.e.offering)
+                        .division(a.e.division)
+                        .batch(a.e.batch)
+                        .teacher(a.p.teacher)
+                        .classroom(a.p.room)
+                        .sessionType(a.e.type)
+                        .dayOfWeek(DayOfWeek.of(a.p.day + 1))
+                        .timeSlot(ts)
+                        .build();
+                toSave.add(sc);
+            }
         }
-        // Reconstruct chosen assignments from domains is non-trivial; if you kept a solution list, persist it here.
-        // If you already maintain a 'List<Assign> sol' in solve(), return it and persist below.
-        // Assuming you collect Assign in solve() like earlier:
-        // for (Assign a : sol) for (TimeSlot ts : a.p.block) { ... }
-        // The block below mirrors your earlier approach:
-
-        // Placeholder: If you kept 'sol' locally in this method earlier, integrate it back.
-        // scheduledClassRepository.saveAll(toSave);
-
-        // If your previous version persisted from a 'sol' list, keep that logic unchanged:
-        // return "Semester " + semNumber + ": scheduled " + toSave.size() + " rows (incl. breaks/lunch)";
-
-        // For parity with your earlier complete version, return a neutral message for now:
         scheduledClassRepository.saveAll(toSave);
         return "Semester " + semNumber + ": scheduled " + toSave.size() + " rows (incl. breaks/lunch)";
     }
@@ -266,7 +270,8 @@ public class TimetableGeneratorService {
                           boolean[][][] roomOcc, boolean[][][] teachOcc,
                           Map<Long,Integer> divIdx, Map<Long,Integer> batchIdx,
                           Map<Long,Integer> roomIdx, Map<Long,Integer> teacherIdx,
-                          Map<String,int[]> perDayCount, Map<String,Integer> perDayCap) {
+                          Map<String,int[]> perDayCount, Map<String,Integer> perDayCap,
+                          List<Assign> sol) {
 
         if (domains.values().stream().allMatch(Objects::isNull)) return true;
 
@@ -286,7 +291,7 @@ public class TimetableGeneratorService {
 
             if (perDayCount.get(key)[p.day] >= perDayCap.get(key)) continue;
 
-            if (e.type== ScheduledClass.SessionType.LECTURE) {
+            if (e.type== SessionType.LECTURE) {
                 if (!free(divBusy[d][p.day], p.start, e.len)) continue;
                 if (!free(roomOcc[r][p.day], p.start, e.len)) continue;
                 if (!free(teachOcc[t][p.day], p.start, e.len)) continue;
@@ -298,7 +303,7 @@ public class TimetableGeneratorService {
                 if (!free(teachOcc[t][p.day], p.start, e.len)) continue;
             }
 
-            boolean[] primary = (e.type== ScheduledClass.SessionType.LECTURE)
+            boolean[] primary = (e.type== SessionType.LECTURE)
                     ? divBusy[d][p.day] : batchOcc[batchIdx.get(e.batch.getId())][p.day];
             occupy(primary, p.start, e.len, true);
             occupy(roomOcc[r][p.day], p.start, e.len, true);
@@ -307,9 +312,12 @@ public class TimetableGeneratorService {
 
             Map<Event,List<Placement>> removed = prune(e, p, domains);
             domains.put(e, null);
+            sol.add(new Assign(e, p));
             if (solve(events, domains, divBusy, batchOcc, roomOcc, teachOcc,
-                    divIdx, batchIdx, roomIdx, teacherIdx, perDayCount, perDayCap)) return true;
+                    divIdx, batchIdx, roomIdx, teacherIdx, perDayCount, perDayCap, sol)) return true;
 
+            // backtrack
+            sol.remove(sol.size()-1);
             occupy(primary, p.start, e.len, false);
             occupy(roomOcc[r][p.day], p.start, e.len, false);
             occupy(teachOcc[t][p.day], p.start, e.len, false);
@@ -395,7 +403,7 @@ public class TimetableGeneratorService {
     }
 
     private static String key(Event e) {
-        return (e.type== ScheduledClass.SessionType.LECTURE)
+        return (e.type== SessionType.LECTURE)
                 ? "L-"+e.offering.getId()+"-"+e.division.getId()
                 : "B-"+e.offering.getId()+"-"+e.batch.getId();
     }
@@ -404,7 +412,7 @@ public class TimetableGeneratorService {
     private static int score(Placement p, Event e, boolean[][][] divBusy, boolean[][][] batchOcc,
                              Map<Long,Integer> divIdx, Map<Long,Integer> batchIdx) {
         int s = p.start;
-        boolean[] line = (e.type== ScheduledClass.SessionType.LECTURE)
+        boolean[] line = (e.type== SessionType.LECTURE)
                 ? divBusy[divIdx.get(e.division.getId())][p.day]
                 : batchOcc[batchIdx.get(e.batch.getId())][p.day];
         if (p.start>0 && line[p.start-1]) s -= 50;
@@ -420,7 +428,7 @@ public class TimetableGeneratorService {
     }
 
     // Room type matcher (String-based)
-    private static boolean roomMatches(String type, ScheduledClass.SessionType session) {
+    private static boolean roomMatches(String type, SessionType session) {
         if (type == null || session == null) return false;
         String t = type.trim().toUpperCase();
         switch (session) {

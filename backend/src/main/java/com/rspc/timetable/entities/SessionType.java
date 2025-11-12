@@ -1,7 +1,10 @@
+// src/main/java/com/rspc/timetable/entities/SessionType.java
 package com.rspc.timetable.entities;
 
 public enum SessionType {
-    THEORY,
+    LECTURE,
+    TUTORIAL,
     LAB,
-    TUTORIAL
+    SHORT_BREAK,
+    LUNCH
 }

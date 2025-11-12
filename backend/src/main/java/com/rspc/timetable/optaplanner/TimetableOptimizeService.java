@@ -1,5 +1,6 @@
 package com.rspc.timetable.optaplanner;
 
+import com.rspc.timetable.entities.SessionType;
 import com.rspc.timetable.entities.*;
 import com.rspc.timetable.repositories.*;
 import lombok.RequiredArgsConstructor;
@@ -73,21 +74,21 @@ public class TimetableOptimizeService {
             for (CourseOffering co : offerings) {
                 for (Division d : divisions) {
                     for (int i=0;i<co.getLecPerWeek();i++)
-                        entities.add(newEntity(co,d,null, ScheduledClass.SessionType.LECTURE,1));
+                        entities.add(newEntity(co,d,null, SessionType.LECTURE,1));
                     for (Batch b : batchesByDiv.getOrDefault(d.getId(), List.of())) {
                         for (int i=0;i<co.getTutPerWeek();i++)
-                            entities.add(newEntity(co,d,b, ScheduledClass.SessionType.TUTORIAL,1));
+                            entities.add(newEntity(co,d,b, SessionType.TUTORIAL,1));
                         int lab = co.getLabPerWeek();
                         for (int k=0;k<lab/2;k++)
-                            entities.add(newEntity(co,d,b, ScheduledClass.SessionType.LAB,2));
+                            entities.add(newEntity(co,d,b, SessionType.LAB,2));
                         if (lab%2!=0)
-                            entities.add(newEntity(co,d,b, ScheduledClass.SessionType.LAB,1));
+                            entities.add(newEntity(co,d,b, SessionType.LAB,1));
                     }
                 }
             }
 
             // Value ranges: exclude break/lunch times
-            List<DayOfWeek> dayRange = List.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, 
+            List<DayOfWeek> dayRange = List.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
                                                 DayOfWeek.THURSDAY, DayOfWeek.FRIDAY);
             List<TimeSlot> slotRange = slots.stream()
                 .filter(ts -> !(
@@ -111,11 +112,12 @@ public class TimetableOptimizeService {
             problem.setTeacherRange(teachers);
             problem.setClasses(entities);
 
+            // Make sure solverConfig.xml is on classpath at optaplanner/solverConfig.xml
             SolverFactory<TimetableSolution> sf = SolverFactory.createFromXmlResource("optaplanner/solverConfig.xml");
             Solver<TimetableSolution> solver = sf.buildSolver();
             TimetableSolution sol = solver.solve(problem);
 
-            // Persist: clear existing + save pinned + solution
+            // Persist: clear existing for these divisions, then save pinned + solution rows
             List<Long> divIds = divisions.stream().map(Division::getId).toList();
             for (Long id : divIds) {
                 scheduledClassRepository.deleteAll(scheduledClassRepository.findByDivisionId(id));
@@ -123,7 +125,7 @@ public class TimetableOptimizeService {
 
             List<ScheduledClass> rows = new ArrayList<>(pinned);
             for (PlannedClass pc : sol.getClasses()) {
-                if (pc.getDay()==null || pc.getStartSlot()==null || pc.getRoom()==null || pc.getTeacher()==null) 
+                if (pc.getDay()==null || pc.getStartSlot()==null || pc.getRoom()==null || pc.getTeacher()==null)
                     continue;
                 for (int k=0; k<pc.getLengthSlots(); k++) {
                     ScheduledClass sc = ScheduledClass.builder()
@@ -149,7 +151,7 @@ public class TimetableOptimizeService {
         }
     }
 
-    private PlannedClass newEntity(CourseOffering co, Division d, Batch b, ScheduledClass.SessionType t, int len) {
+    private PlannedClass newEntity(CourseOffering co, Division d, Batch b, SessionType t, int len) {
         PlannedClass pc = new PlannedClass();
         pc.setOffering(co); pc.setDivision(d); pc.setBatch(b); pc.setSessionType(t); pc.setLengthSlots(len);
         return pc;
@@ -169,15 +171,15 @@ public class TimetableOptimizeService {
             for (Division d : groups.get(gi)) {
                 int sb = combos[gi][0], ln = combos[gi][1];
                 for (int day=0; day<5; day++) {
-                    pinned.add(row(d, slots.get(sb), ScheduledClass.SessionType.SHORT_BREAK, day));
-                    pinned.add(row(d, slots.get(ln), ScheduledClass.SessionType.LUNCH, day));
+                    pinned.add(row(d, slots.get(sb), SessionType.SHORT_BREAK, day));
+                    pinned.add(row(d, slots.get(ln), SessionType.LUNCH, day));
                 }
             }
         }
         return pinned;
     }
 
-    private ScheduledClass row(Division d, TimeSlot ts, ScheduledClass.SessionType t, int day0) {
+    private ScheduledClass row(Division d, TimeSlot ts, SessionType t, int day0) {
         return ScheduledClass.builder()
             .division(d).timeSlot(ts).sessionType(t).dayOfWeek(DayOfWeek.of(day0+1))
             .teacher(null).classroom(null).batch(null).courseOffering(null)
