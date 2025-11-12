@@ -35,4 +35,9 @@ public class CourseOffering {
     private Integer tutPerWeek;
     private Integer labPerWeek;
     private Integer weeklyHours;
+
+    // Convenience shim for legacy usage
+    public String getCourseCode() {
+        return (subject != null) ? subject.getCode() : null;
+    }
 }

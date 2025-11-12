@@ -2,6 +2,7 @@ package com.rspc.timetable.dto;
 
 import com.rspc.timetable.entities.ScheduledClass;
 import lombok.Data;
+
 import java.time.DayOfWeek;
 import java.time.format.DateTimeFormatter;
 
@@ -20,20 +21,42 @@ public class ScheduledClassDTO {
 
     public ScheduledClassDTO(ScheduledClass sc) {
         DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm");
+
         this.id = sc.getId();
         this.dayOfWeek = sc.getDayOfWeek();
-        this.timeSlot = sc.getTimeSlot().getStartTime().format(timeFormatter) + " - " + sc.getTimeSlot().getEndTime().format(timeFormatter);
-        this.subjectName = sc.getCourseOffering().getSubject().getName();
-        this.subjectCode = sc.getCourseOffering().getSubject().getCode();
-        this.classroomNumber = sc.getClassroom().getRoomNumber();
-        this.divisionName = sc.getDivision().getDivisionName();
-        this.sessionType = sc.getSessionType().toString();
 
-        // --- **THE FIX** ---
-        // This now reads the teacher's name from the ScheduledClass entity directly,
-        // which has its own relationship to the Teacher.
+        // 🕒 Handle time slot safely
+        if (sc.getTimeSlot() != null && sc.getTimeSlot().getStartTime() != null && sc.getTimeSlot().getEndTime() != null) {
+            this.timeSlot = sc.getTimeSlot().getStartTime().format(timeFormatter)
+                    + " - " + sc.getTimeSlot().getEndTime().format(timeFormatter);
+        }
+
+        // 📘 Subject details
+        if (sc.getCourseOffering() != null && sc.getCourseOffering().getSubject() != null) {
+            this.subjectName = sc.getCourseOffering().getSubject().getName();
+            this.subjectCode = sc.getCourseOffering().getSubject().getCode();
+        }
+
+        // 🧑‍🏫 Teacher
         if (sc.getTeacher() != null) {
             this.teacherName = sc.getTeacher().getName();
+        } else {
+            this.teacherName = "TBD"; // fallback
+        }
+
+        // 🏫 Classroom
+        if (sc.getClassroom() != null) {
+            this.classroomNumber = sc.getClassroom().getRoomNumber();
+        }
+
+        // 🏷 Division
+        if (sc.getDivision() != null) {
+            this.divisionName = sc.getDivision().getDivisionName();
+        }
+
+        // 🧩 Session type (THEORY / LAB / TUTORIAL)
+        if (sc.getSessionType() != null) {
+            this.sessionType = sc.getSessionType().toString();
         }
     }
 }

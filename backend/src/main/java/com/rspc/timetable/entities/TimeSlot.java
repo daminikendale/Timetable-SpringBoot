@@ -1,13 +1,17 @@
 package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+
 import java.time.LocalTime;
 
-@Data
 @Entity
 @Table(name = "timeslots")
+@Getter @Setter
 public class TimeSlot {
+
+    public enum SlotType { REGULAR, SHORT_BREAK_CANDIDATE, LUNCH_CANDIDATE }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -19,10 +23,7 @@ public class TimeSlot {
     @Column(nullable = false)
     private LocalTime endTime;
 
-    /**
-     * This field is crucial. It distinguishes between a schedulable class period
-     * and a non-schedulable break (like lunch).
-     */
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private boolean isBreak = false;
+    private SlotType type = SlotType.REGULAR;
 }

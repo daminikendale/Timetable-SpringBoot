@@ -9,12 +9,7 @@ import java.util.List;
 @Repository
 public interface TimeSlotRepository extends JpaRepository<TimeSlot, Long> {
 
-    /**
-     * This is the method you need to add.
-     * Spring Data JPA will automatically generate a query based on the method name,
-     * finding all TimeSlot entities where the 'isBreak' field matches the
-     * provided boolean value.
-     */
-    List<TimeSlot> findByIsBreak(boolean isBreak);
-
+   
+    // New typed helper
+    List<TimeSlot> findByType(TimeSlot.SlotType type);
 }

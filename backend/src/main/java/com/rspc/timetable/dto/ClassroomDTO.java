@@ -10,15 +10,25 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class ClassroomDTO {
     private Long id;
-    private String roomNumber;
-    private int capacity;
-    private String type; // Using String for simplicity in DTOs
+    private String roomNumber; // maps to Classroom.name
+    private Integer capacity;
+    private String type;
 
-    // Convenience constructor to map from the entity
     public ClassroomDTO(Classroom classroom) {
-        this.id = classroom.getId();
-        this.roomNumber = classroom.getRoomNumber();
-        this.capacity = classroom.getCapacity();
-        this.type = classroom.getType().name();
+        if (classroom != null) {
+            this.id = classroom.getId();
+            this.roomNumber = classroom.getName(); // map from 'name'
+            this.capacity = classroom.getCapacity();
+            this.type = classroom.getType();
+        }
+    }
+
+    public Classroom toEntity() {
+        Classroom c = new Classroom();
+        c.setId(this.id);
+        c.setName(this.roomNumber); // map to 'name'
+        c.setCapacity(this.capacity != null ? this.capacity : 0);
+        c.setType(this.type);
+        return c;
     }
 }

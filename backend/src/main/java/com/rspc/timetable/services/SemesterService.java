@@ -3,28 +3,21 @@ package com.rspc.timetable.services;
 import com.rspc.timetable.dto.SemesterDTO;
 import com.rspc.timetable.entities.Semester;
 import com.rspc.timetable.repositories.SemesterRepository;
-import org.springframework.context.annotation.Lazy;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class SemesterService {
 
     private final SemesterRepository semesterRepository;
 
-    public SemesterService(@Lazy SemesterRepository semesterRepository) {
-        this.semesterRepository = semesterRepository;
-    }
-
-    public List<SemesterDTO> getAllSemesterDTOs() {
-        return semesterRepository.findAll().stream()
-                                  .map(SemesterDTO::new)
-                                  .collect(Collectors.toList());
-    }
-
+    // Entity endpoints
     public List<Semester> getAllSemesters() {
         return semesterRepository.findAll();
     }
@@ -47,5 +40,16 @@ public class SemesterService {
 
     public List<Semester> findAllByIds(Set<Long> ids) {
         return semesterRepository.findAllById(ids);
+    }
+
+    // DTO helpers
+    public List<SemesterDTO> getAllSemesterDTOs() {
+        return semesterRepository.findAll().stream()
+            .map(SemesterDTO::new)
+            .collect(Collectors.toList());
+    }
+
+    public Optional<SemesterDTO> getSemesterDTOById(Long id) {
+        return semesterRepository.findById(id).map(SemesterDTO::new);
     }
 }

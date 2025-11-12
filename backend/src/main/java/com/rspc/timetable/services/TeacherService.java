@@ -9,6 +9,7 @@ import jakarta.persistence.EntityNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -16,47 +17,48 @@ import java.util.stream.Collectors;
 public class TeacherService {
 
     private final TeacherRepository teacherRepository;
-    private final DepartmentRepository departmentRepository; // Inject to handle the relationship
+    private final DepartmentRepository departmentRepository;
 
-    public TeacherService(TeacherRepository teacherRepository, DepartmentRepository departmentRepository) {
+    public TeacherService(TeacherRepository teacherRepository,
+                          DepartmentRepository departmentRepository) {
         this.teacherRepository = teacherRepository;
         this.departmentRepository = departmentRepository;
     }
 
-    // --- DTO to Entity Mapping (Helper Method) ---
+    // ---- Mapping helpers ----
     private Teacher convertToEntity(TeacherDTO dto) {
         Teacher teacher = new Teacher();
         teacher.setId(dto.id());
         teacher.setName(dto.name());
         teacher.setEmail(dto.email());
-        teacher.setEmployeeId(dto.employeeId()); // Assuming employeeId is now in the Teacher entity
-        
-        // Handle the department relationship
+        teacher.setEmployeeId(dto.employeeId());
         if (dto.departmentId() != null) {
-            Department department = departmentRepository.findById(dto.departmentId())
+            Department dept = departmentRepository.findById(dto.departmentId())
                 .orElseThrow(() -> new EntityNotFoundException("Department not found with ID: " + dto.departmentId()));
-            teacher.setDepartment(department);
+            teacher.setDepartment(dept);
         }
-
-        teacher.setUnavailableTimeSlots(dto.unavailableTimeSlots());
-        
+        if (dto.unavailableTimeSlots() != null) {
+            teacher.setUnavailableTimeSlots(dto.unavailableTimeSlots());
+        }
         return teacher;
     }
 
-    // --- Entity to DTO Mapping (Helper Method) ---
     private TeacherDTO convertToDTO(Teacher teacher) {
+        Long deptId = teacher.getDepartment() != null ? teacher.getDepartment().getId() : null;
+        List slots = teacher.getUnavailableTimeSlots() != null
+            ? teacher.getUnavailableTimeSlots()
+            : Collections.emptyList();
         return new TeacherDTO(
             teacher.getId(),
             teacher.getName(),
             teacher.getEmail(),
             teacher.getEmployeeId(),
-            teacher.getDepartment() != null ? teacher.getDepartment().getId() : null,
-            teacher.getUnavailableTimeSlots()
+            deptId,
+            slots
         );
     }
-    
-    // --- Service Methods Using DTOs ---
 
+    // ---- CRUD using DTOs ----
     @Transactional(readOnly = true)
     public List<TeacherDTO> getAllTeachers() {
         return teacherRepository.findAll().stream()
@@ -74,20 +76,29 @@ public class TeacherService {
     @Transactional
     public TeacherDTO createTeacher(TeacherDTO teacherDTO) {
         Teacher teacher = convertToEntity(teacherDTO);
-        Teacher savedTeacher = teacherRepository.save(teacher);
-        return convertToDTO(savedTeacher);
+        Teacher saved = teacherRepository.save(teacher);
+        return convertToDTO(saved);
     }
 
     @Transactional
     public TeacherDTO updateTeacher(Long id, TeacherDTO teacherDTO) {
-        // Ensure the teacher exists
-        if (!teacherRepository.existsById(id)) {
-            throw new EntityNotFoundException("Teacher not found with ID: " + id);
+        Teacher existing = teacherRepository.findById(id)
+            .orElseThrow(() -> new EntityNotFoundException("Teacher not found with ID: " + id));
+
+        if (teacherDTO.name() != null) existing.setName(teacherDTO.name());
+        if (teacherDTO.email() != null) existing.setEmail(teacherDTO.email());
+        if (teacherDTO.employeeId() != null) existing.setEmployeeId(teacherDTO.employeeId());
+        if (teacherDTO.departmentId() != null) {
+            Department dept = departmentRepository.findById(teacherDTO.departmentId())
+                .orElseThrow(() -> new EntityNotFoundException("Department not found with ID: " + teacherDTO.departmentId()));
+            existing.setDepartment(dept);
         }
-        Teacher teacherToUpdate = convertToEntity(teacherDTO);
-        teacherToUpdate.setId(id); // Ensure we are updating the correct entity
-        Teacher updatedTeacher = teacherRepository.save(teacherToUpdate);
-        return convertToDTO(updatedTeacher);
+        if (teacherDTO.unavailableTimeSlots() != null) {
+            existing.setUnavailableTimeSlots(teacherDTO.unavailableTimeSlots());
+        }
+
+        Teacher updated = teacherRepository.save(existing);
+        return convertToDTO(updated);
     }
 
     @Transactional
@@ -100,14 +111,10 @@ public class TeacherService {
 
     @Transactional
     public List<TeacherDTO> saveAllTeachersFromDTOs(List<TeacherDTO> teacherDTOs) {
-        List<Teacher> teachers = teacherDTOs.stream()
+        List<Teacher> toSave = teacherDTOs.stream()
             .map(this::convertToEntity)
             .collect(Collectors.toList());
-        
-        List<Teacher> savedTeachers = teacherRepository.saveAll(teachers);
-        
-        return savedTeachers.stream()
-            .map(this::convertToDTO)
-            .collect(Collectors.toList());
+        List<Teacher> saved = teacherRepository.saveAll(toSave);
+        return saved.stream().map(this::convertToDTO).collect(Collectors.toList());
     }
 }
