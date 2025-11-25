@@ -2,61 +2,48 @@ package com.rspc.timetable.dto;
 
 import com.rspc.timetable.entities.ScheduledClass;
 import lombok.Data;
-
-import java.time.DayOfWeek;
-import java.time.format.DateTimeFormatter;
+import lombok.NoArgsConstructor;
 
 @Data
+@NoArgsConstructor
 public class ScheduledClassDTO {
 
     private Long id;
-    private DayOfWeek dayOfWeek;
-    private String timeSlot;
+    private String dayOfWeek;
+
+    private String timeSlot; // "HH:mm - HH:mm"
+    private String startTime;
+    private String endTime;
+
     private String subjectName;
     private String subjectCode;
+
     private String teacherName;
-    private String classroomNumber;
+    private String classroomName;
+
     private String sessionType;
     private String divisionName;
+    private String batchName;
 
     public ScheduledClassDTO(ScheduledClass sc) {
-        DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm");
-
         this.id = sc.getId();
-        this.dayOfWeek = sc.getDayOfWeek();
+        this.dayOfWeek = sc.getDayOfWeek().name();
 
-        // 🕒 Handle time slot safely
-        if (sc.getTimeSlot() != null && sc.getTimeSlot().getStartTime() != null && sc.getTimeSlot().getEndTime() != null) {
-            this.timeSlot = sc.getTimeSlot().getStartTime().format(timeFormatter)
-                    + " - " + sc.getTimeSlot().getEndTime().format(timeFormatter);
+        if (sc.getTimeSlot() != null) {
+            this.startTime = sc.getTimeSlot().getStartTime().toString();
+            this.endTime = sc.getTimeSlot().getEndTime().toString();
+            this.timeSlot = startTime.substring(0,5) + " - " + endTime.substring(0,5);
         }
 
-        // 📘 Subject details
-        if (sc.getCourseOffering() != null && sc.getCourseOffering().getSubject() != null) {
-            this.subjectName = sc.getCourseOffering().getSubject().getName();
-            this.subjectCode = sc.getCourseOffering().getSubject().getCode();
+        if (sc.getSubject() != null) {
+            this.subjectName = sc.getSubject().getName();
+            this.subjectCode = sc.getSubject().getCode();
         }
 
-        // 🧑‍🏫 Teacher
-        if (sc.getTeacher() != null) {
-            this.teacherName = sc.getTeacher().getName();
-        } else {
-            this.teacherName = "TBD"; // fallback
-        }
-
-        // 🏫 Classroom
-        if (sc.getClassroom() != null) {
-            this.classroomNumber = sc.getClassroom().getRoomNumber();
-        }
-
-        // 🏷 Division
-        if (sc.getDivision() != null) {
-            this.divisionName = sc.getDivision().getDivisionName();
-        }
-
-        // 🧩 Session type (THEORY / LAB / TUTORIAL)
-        if (sc.getSessionType() != null) {
-            this.sessionType = sc.getSessionType().toString();
-        }
+        this.teacherName = (sc.getTeacher() != null) ? sc.getTeacher().getName() : null;
+        this.classroomName = (sc.getClassroom() != null) ? sc.getClassroom().getName() : null;
+        this.divisionName = (sc.getDivision() != null) ? sc.getDivision().getDivisionName() : null;
+        this.sessionType = sc.getSessionType();
+        this.batchName = (sc.getBatch() != null) ? sc.getBatch().getBatchName() : null;
     }
 }

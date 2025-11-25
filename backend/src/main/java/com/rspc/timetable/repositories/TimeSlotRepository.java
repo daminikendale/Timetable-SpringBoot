@@ -8,8 +8,5 @@ import java.util.List;
 
 @Repository
 public interface TimeSlotRepository extends JpaRepository<TimeSlot, Long> {
-
-   
-    // New typed helper
-    List<TimeSlot> findByType(TimeSlot.SlotType type);
+    List<TimeSlot> findAllByOrderByStartTimeAsc();
 }

@@ -1,9 +1,7 @@
 package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
-import lombok.Data;
 
-@Data
 @Entity
 @Table(name = "divisions")
 public class Division {
@@ -12,15 +10,25 @@ public class Division {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "division_name", unique = true, nullable = false)
-    private String divisionName; // e.g., "A", "B"
+    // or whatever column name you are using
+    private String divisionName;
 
-    // Compatibility shim for legacy calls
-    public String getName() {
-        return this.divisionName;
+    public Division() {
     }
 
-    public void setName(String name) {
-        this.divisionName = name;
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getDivisionName() {
+        return divisionName;
+    }
+
+    public void setDivisionName(String divisionName) {
+        this.divisionName = divisionName;
     }
 }

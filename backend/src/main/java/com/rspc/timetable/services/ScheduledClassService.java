@@ -18,21 +18,23 @@ public class ScheduledClassService {
 
     @Transactional(readOnly = true)
     public List<ScheduledClassDTO> getTimetableForDivision(Long divisionId) {
-        return scheduledClassRepository.findByDivisionIdOrderByDayOfWeekAscTimeSlotAsc(divisionId).stream()
-                .map(ScheduledClassDTO::new)
-                .collect(Collectors.toList());
-    }
-    public void deleteByDivision(Long divisionId) {
-    List<ScheduledClass> classes = scheduledClassRepository.findByDivisionId(divisionId);
-    scheduledClassRepository.deleteAll(classes);
-}
+        List<ScheduledClass> list =
+                scheduledClassRepository.findByDivision_IdOrderByDayOfWeekAscTimeSlot_StartTimeAsc(divisionId);
 
+        return list.stream().map(ScheduledClassDTO::new).collect(Collectors.toList());
+    }
 
     @Transactional(readOnly = true)
     public List<ScheduledClassDTO> getTimetableForTeacher(Long teacherId) {
-        // THIS NOW CALLS THE CORRECT, RENAMED REPOSITORY METHOD
-        return scheduledClassRepository.findByTeacherIdOrderByDayOfWeekAscTimeSlotAsc(teacherId).stream()
-                .map(ScheduledClassDTO::new)
-                .collect(Collectors.toList());
+        List<ScheduledClass> list =
+                scheduledClassRepository.findByTeacher_IdOrderByDayOfWeekAscTimeSlot_StartTimeAsc(teacherId);
+
+        return list.stream().map(ScheduledClassDTO::new).collect(Collectors.toList());
+    }
+
+    @Transactional
+    public void deleteByDivision(Long divisionId) {
+        List<ScheduledClass> classes = scheduledClassRepository.findByDivision_Id(divisionId);
+        scheduledClassRepository.deleteAll(classes);
     }
 }

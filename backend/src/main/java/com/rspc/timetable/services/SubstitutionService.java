@@ -19,13 +19,13 @@ public class SubstitutionService {
     private final SubstitutionRepository substitutionRepository;
 
     public List<Substitution> assignSubstitutesForRange(Long absentTeacherId, LocalDate date, Long startTimeSlotId, Long endTimeSlotId) {
-        List<ScheduledClass> classesToCover = scheduledClassRepository.findAllByTeacherIdAndDayOfWeekAndTimeSlotIdBetween(
-                absentTeacherId, date.getDayOfWeek(), startTimeSlotId, endTimeSlotId);
-        
+        List<ScheduledClass> classesToCover = scheduledClassRepository.findAllByTeacher_IdAndDayOfWeekAndTimeSlot_IdBetween(absentTeacherId, date.getDayOfWeek(), startTimeSlotId, endTimeSlotId);
+
         List<Substitution> createdSubstitutions = new ArrayList<>();
 
         for (ScheduledClass classToCover : classesToCover) {
-            List<Teacher> qualifiedSubstitutes = teacherSubjectAllocationRepository.findAllBySubject(classToCover.getCourseOffering().getSubject())
+            // Use subject directly from ScheduledClass (no courseOffering on ScheduledClass)
+            List<Teacher> qualifiedSubstitutes = teacherSubjectAllocationRepository.findAllBySubject(classToCover.getSubject())
                     .stream()
                     .map(TeacherSubjectAllocation::getTeacher)
                     .filter(teacher -> !teacher.getId().equals(absentTeacherId))
@@ -33,15 +33,12 @@ public class SubstitutionService {
 
             Teacher substituteFound = null;
             for (Teacher potentialSubstitute : qualifiedSubstitutes) {
-                boolean isFreeInPermanentSchedule = scheduledClassRepository
-                    .findByTeacherIdAndDayOfWeekAndTimeSlotId(potentialSubstitute.getId(), classToCover.getDayOfWeek(), classToCover.getTimeSlot().getId())
-                    .isEmpty();
-                
-                // ✅ CORRECTED THIS LINE
+                boolean isFreeInPermanentSchedule = scheduledClassRepository.findByTeacher_IdAndDayOfWeekAndTimeSlot_Id(potentialSubstitute.getId(), classToCover.getDayOfWeek(), classToCover.getTimeSlot().getId()).isEmpty();
+
                 boolean isFreeInTemporarySchedule = substitutionRepository
                     .findBySubstituteTeacherIdAndSubstitutionDateAndScheduledClass_TimeSlot(
-                        potentialSubstitute.getId(), 
-                        date, 
+                        potentialSubstitute.getId(),
+                        date,
                         classToCover.getTimeSlot()
                     ).isEmpty();
 

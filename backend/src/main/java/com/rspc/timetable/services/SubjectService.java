@@ -24,15 +24,17 @@ public class SubjectService {
     private void mapDtoToEntity(SubjectDTO dto, Subject entity) {
         entity.setName(dto.getName());
         entity.setCode(dto.getCode());
-        entity.setCategory(dto.getCategory());
 
-        // Optional subjectType mapping (String -> Enum)
-        if (dto.getSubjectType() != null && !dto.getSubjectType().isBlank()) {
-            try {
-                entity.setSubjectType(Subject.SubjectType.valueOf(dto.getSubjectType().toUpperCase()));
-            } catch (IllegalArgumentException ex) {
-                throw new IllegalArgumentException("Invalid subjectType: " + dto.getSubjectType());
-            }
+        // Category: DTO enum -> entity enum
+        if (dto.getCategory() != null) {
+            entity.setCategory(Subject.SubjectCategory.valueOf(dto.getCategory().name()));
+        } else {
+            entity.setCategory(null);
+        }
+
+        // SubjectType: DTO enum -> entity enum (no String methods)
+        if (dto.getSubjectType() != null) {
+            entity.setSubjectType(dto.getSubjectType());
         } else {
             entity.setSubjectType(null);
         }
@@ -42,7 +44,9 @@ public class SubjectService {
             throw new IllegalArgumentException("Semester ID is required.");
         }
         Semester semester = semesterRepository.findById(dto.getSemesterId())
-            .orElseThrow(() -> new EntityNotFoundException("Semester not found with id: " + dto.getSemesterId()));
+            .orElseThrow(() ->
+                new EntityNotFoundException("Semester not found with id: " + dto.getSemesterId())
+            );
         entity.setSemester(semester);
     }
 
@@ -71,7 +75,7 @@ public class SubjectService {
         return new SubjectDTO(subjectRepository.save(newSubject));
     }
 
-    // REQUIRED: bulk create matching controller signature
+    // bulk create matching controller signature
     @Transactional
     public List<SubjectDTO> createSubjectsBulk(List<SubjectDTO> subjectDTOs) {
         List<Subject> subjectsToSave = subjectDTOs.stream().map(dto -> {
@@ -86,7 +90,7 @@ public class SubjectService {
             .collect(Collectors.toList());
     }
 
-    // REQUIRED: update matching controller signature
+    // update matching controller signature
     @Transactional
     public SubjectDTO updateSubject(Long id, SubjectDTO subjectDTO) {
         Subject subjectToUpdate = subjectRepository.findById(id)

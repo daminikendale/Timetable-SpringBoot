@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -15,6 +16,11 @@ import java.util.stream.Collectors;
 public class ClassroomService {
 
     private final ClassroomRepository classroomRepository;
+
+    // Keep in sync with constraint provider roomTypeMatch()
+    private static final Set<String> ALLOWED_TYPES = Set.of(
+            "LECTURE", "LECTURE_HALL", "CLASSROOM", "LAB", "TUTORIAL", "TUTORIAL_ROOM"
+    );
 
     // ----- Entity endpoints -----
     public List<Classroom> getAllClassrooms() {
@@ -26,24 +32,15 @@ public class ClassroomService {
     }
 
     public Classroom saveClassroom(Classroom classroom) {
-        // Backward-compat if callers used roomNumber shim
-        if (classroom.getName() == null) {
-            try {
-                String rn = classroom.getRoomNumber(); // shim in Classroom entity
-                if (rn != null) classroom.setName(rn);
-            } catch (NoSuchMethodError ignored) {}
-        }
+        normalize(classroom);
+        validate(classroom);
         return classroomRepository.save(classroom);
     }
 
     public List<Classroom> saveAllClassrooms(List<Classroom> classrooms) {
         for (Classroom c : classrooms) {
-            if (c.getName() == null) {
-                try {
-                    String rn = c.getRoomNumber();
-                    if (rn != null) c.setName(rn);
-                } catch (NoSuchMethodError ignored) {}
-            }
+            normalize(c);
+            validate(c);
         }
         return classroomRepository.saveAll(classrooms);
     }
@@ -52,7 +49,7 @@ public class ClassroomService {
         classroomRepository.deleteById(id);
     }
 
-    // ----- DTO helpers (separate to avoid type mismatches) -----
+    // ----- DTO helpers -----
     public List<ClassroomDTO> getAllClassroomDTOs() {
         return classroomRepository.findAll()
                 .stream()
@@ -63,4 +60,24 @@ public class ClassroomService {
     public Optional<ClassroomDTO> getClassroomDTOById(Long id) {
         return classroomRepository.findById(id).map(ClassroomDTO::new);
     }
+
+    // ----- helpers -----
+    // Normalize no longer trims type because it’s enum
+private void normalize(Classroom c) {
+    if (c.getName() != null) {
+        c.setName(c.getName().trim());
+    }
+    // No trimming or case conversion for enum type
+}
+
+// Validate checks if enum value is in allowed types
+private void validate(Classroom c) {
+    if (c.getName() == null || c.getName().isBlank()) {
+        throw new IllegalArgumentException("Classroom name is required");
+    }
+    if (c.getType() == null || !ALLOWED_TYPES.contains(c.getType().name())) {
+        throw new IllegalArgumentException("Invalid classroom type: " + (c.getType() != null ? c.getType().name() : "null"));
+    }
+}
+
 }

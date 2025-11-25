@@ -7,15 +7,16 @@ public interface CourseOfferingService {
 
     CourseOfferingDTO createCourseOffering(CourseOfferingDTO dto);
 
-    List<CourseOfferingDTO> createBulkCourseOfferings(List<CourseOfferingDTO> dtos);
-
-    List<CourseOfferingDTO> getAllOfferings();
-
     CourseOfferingDTO getOfferingById(Long id);
 
-    void deleteOffering(Long id);
+    List<CourseOfferingDTO> getOfferingsBySubjectAndSemesters(Long subjectId, List<Integer> semesterNumbers);
 
     List<CourseOfferingDTO> getOfferingsBySemesterNumbers(List<Integer> semesterNumbers);
 
-    List<CourseOfferingDTO> getOfferingsBySubjectAndSemesters(Long subjectId, List<Integer> semesterNumbers);
+    List<CourseOfferingDTO> getAllOfferings();
+
+    // Add these to match the controller
+    List<CourseOfferingDTO> createBulkCourseOfferings(List<CourseOfferingDTO> offerings);
+
+    void deleteOffering(Long id);
 }

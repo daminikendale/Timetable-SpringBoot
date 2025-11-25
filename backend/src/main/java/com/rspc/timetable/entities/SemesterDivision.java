@@ -1,32 +1,47 @@
 package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 
-@Data
 @Entity
 @Table(name = "semester_divisions")
-@NoArgsConstructor // JPA requires a no-argument constructor
-@AllArgsConstructor // Creates the constructor we need: new SemesterDivision(semester, division)
 public class SemesterDivision {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "semester_id", nullable = false)
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "semester_id")
     private Semester semester;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "division_id", nullable = false)
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "division_id")
     private Division division;
 
-    // A convenience constructor without the 'id' for easy creation
-    public SemesterDivision(Semester semester, Division division) {
+    public SemesterDivision() {
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public Semester getSemester() {
+        return semester;
+    }
+
+    public void setSemester(Semester semester) {
         this.semester = semester;
+    }
+
+    public Division getDivision() {
+        return division;
+    }
+
+    public void setDivision(Division division) {
         this.division = division;
     }
 }

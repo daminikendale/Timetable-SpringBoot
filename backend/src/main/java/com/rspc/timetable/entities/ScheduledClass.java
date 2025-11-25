@@ -1,49 +1,53 @@
 package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
-import lombok.*;
+import lombok.Getter;
+import lombok.Setter;
 import java.time.DayOfWeek;
 
 @Entity
+@Getter
+@Setter
 @Table(name = "scheduled_classes")
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class ScheduledClass {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Remove the nested enum here if it exists
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "session_type", nullable = false)
-    private SessionType sessionType; // top-level enum
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "day_of_week", nullable = false)
-    private DayOfWeek dayOfWeek;
-
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne
     @JoinColumn(name = "division_id", nullable = false)
     private Division division;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne
+    @JoinColumn(name = "subject_id", nullable = false)
+    private Subject subject;
+
+    @ManyToOne
     @JoinColumn(name = "teacher_id")
     private Teacher teacher;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne
     @JoinColumn(name = "classroom_id")
     private Classroom classroom;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "batch_id")
-    private Batch batch;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "course_offering_id", nullable = false)
-    private CourseOffering courseOffering;
-
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne
     @JoinColumn(name = "time_slot_id", nullable = false)
     private TimeSlot timeSlot;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private DayOfWeek dayOfWeek;
+
+    @Column(nullable = false)
+    private String sessionType;
+
+    @ManyToOne
+    @JoinColumn(name = "course_offering_id")
+    private CourseOffering courseOffering;
+
+    // Use entity relation, not plain id
+    @ManyToOne
+    @JoinColumn(name = "batch_id")
+    private Batch batch;
 }

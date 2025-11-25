@@ -3,14 +3,17 @@ package com.rspc.timetable.services;
 import com.rspc.timetable.dto.TeacherDTO;
 import com.rspc.timetable.entities.Department;
 import com.rspc.timetable.entities.Teacher;
+import com.rspc.timetable.entities.TimeSlot;
 import com.rspc.timetable.repositories.DepartmentRepository;
 import com.rspc.timetable.repositories.TeacherRepository;
+import com.rspc.timetable.repositories.TimeSlotRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -18,11 +21,14 @@ public class TeacherService {
 
     private final TeacherRepository teacherRepository;
     private final DepartmentRepository departmentRepository;
+    private final TimeSlotRepository timeSlotRepository;
 
     public TeacherService(TeacherRepository teacherRepository,
-                          DepartmentRepository departmentRepository) {
+                          DepartmentRepository departmentRepository,
+                          TimeSlotRepository timeSlotRepository) {
         this.teacherRepository = teacherRepository;
         this.departmentRepository = departmentRepository;
+        this.timeSlotRepository = timeSlotRepository;
     }
 
     // ---- Mapping helpers ----
@@ -32,21 +38,28 @@ public class TeacherService {
         teacher.setName(dto.name());
         teacher.setEmail(dto.email());
         teacher.setEmployeeId(dto.employeeId());
+
         if (dto.departmentId() != null) {
             Department dept = departmentRepository.findById(dto.departmentId())
                 .orElseThrow(() -> new EntityNotFoundException("Department not found with ID: " + dto.departmentId()));
             teacher.setDepartment(dept);
         }
+
         if (dto.unavailableTimeSlots() != null) {
-            teacher.setUnavailableTimeSlots(dto.unavailableTimeSlots());
+            Set<TimeSlot> slots = dto.unavailableTimeSlots().stream()
+                .map(slotId -> timeSlotRepository.findById(slotId)
+                    .orElseThrow(() -> new EntityNotFoundException("TimeSlot not found with ID: " + slotId)))
+                .collect(Collectors.toSet());
+            teacher.setUnavailableTimeSlots(slots);
         }
+
         return teacher;
     }
 
     private TeacherDTO convertToDTO(Teacher teacher) {
         Long deptId = teacher.getDepartment() != null ? teacher.getDepartment().getId() : null;
-        List slots = teacher.getUnavailableTimeSlots() != null
-            ? teacher.getUnavailableTimeSlots()
+        List<Long> slots = teacher.getUnavailableTimeSlots() != null
+            ? teacher.getUnavailableTimeSlots().stream().map(TimeSlot::getId).collect(Collectors.toList())
             : Collections.emptyList();
         return new TeacherDTO(
             teacher.getId(),
@@ -94,7 +107,11 @@ public class TeacherService {
             existing.setDepartment(dept);
         }
         if (teacherDTO.unavailableTimeSlots() != null) {
-            existing.setUnavailableTimeSlots(teacherDTO.unavailableTimeSlots());
+            Set<TimeSlot> slots = teacherDTO.unavailableTimeSlots().stream()
+                .map(slotId -> timeSlotRepository.findById(slotId)
+                    .orElseThrow(() -> new EntityNotFoundException("TimeSlot not found with ID: " + slotId)))
+                .collect(Collectors.toSet());
+            existing.setUnavailableTimeSlots(slots);
         }
 
         Teacher updated = teacherRepository.save(existing);

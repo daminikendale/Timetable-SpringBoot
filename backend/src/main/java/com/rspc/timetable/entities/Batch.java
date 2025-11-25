@@ -1,19 +1,23 @@
 package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
-@Data
 @Entity
-@Table(name = "batches")
-
+@Getter
+@Setter
 public class Batch {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String batchName; // ✅ instead of 'name'
-    private int size;
+    private String batchName;
+
+    private Integer batchNumber;
+
+    private Integer size;
 
     @ManyToOne
     @JoinColumn(name = "division_id")

@@ -3,21 +3,26 @@ package com.rspc.timetable.services;
 import com.rspc.timetable.entities.*;
 import com.rspc.timetable.repositories.*;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.LocalTime;
 import java.time.DayOfWeek;
 import java.util.*;
-import java.util.function.BiConsumer;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TimetableGeneratorService {
 
-    private static final Logger log = LoggerFactory.getLogger(TimetableGeneratorService.class);
+    private static final int DAYS = 5;
+    private static final int MAX_SAME_SUBJECT_PER_DAY = 2; // per division per day for lectures
+    private static final long TIMEOUT_MINUTES = 5; // reduced for large data
+    private static final int BATCH_SIZE = 500;
 
     private final ScheduledClassRepository scheduledClassRepository;
     private final CourseOfferingRepository courseOfferingRepository;
@@ -26,419 +31,786 @@ public class TimetableGeneratorService {
     private final SemesterDivisionRepository semesterDivisionRepository;
     private final TeacherSubjectAllocationRepository teacherSubjectAllocationRepository;
     private final BatchRepository batchRepository;
-    private final SemesterRepository semesterRepository;
-
-    private static final int DAYS = 5; // Mon–Fri
-
-    // Event for solver
-    private static final class Event {
-        final CourseOffering offering;
-        final Division division;
-        final Batch batch;          // null for division-level lecture
-        final SessionType type;     // LECTURE/TUTORIAL/LAB
-        final int len;              // block length in slots (1 or 2)
-        Event(CourseOffering o, Division d, Batch b, SessionType t, int len) {
-            this.offering = o; this.division = d; this.batch = b; this.type = t; this.len = len;
-        }
-    }
-
-    // Candidate placement
-    private static final class Placement {
-        final int day;
-        final int start;
-        final Classroom room;
-        final Teacher teacher;
-        final List<TimeSlot> block;
-        Placement(int day, int start, Classroom room, Teacher teacher, List<TimeSlot> block) {
-            this.day = day; this.start = start; this.room = room; this.teacher = teacher; this.block = block;
-        }
-    }
-
-    private static final class Assign {
-        final Event e;
-        final Placement p;
-        Assign(Event e, Placement p){ this.e=e; this.p=p; }
-    }
-
-    public enum SemesterType { ODD, EVEN }
 
     @Transactional
-    public String generateTimetableForOddSemesters() { return generateForType(SemesterType.ODD); }
+    public boolean generateTimetable(Long semesterId) {
+        log.info("Starting optimized timetable generation for semester {}", semesterId);
+        long startTime = System.currentTimeMillis();
 
-    @Transactional
-    public String generateTimetableForEvenSemesters() { return generateForType(SemesterType.EVEN); }
+        try {
+            GenerationContext context = loadGenerationContextOptimized(semesterId);
 
-    @Transactional
-    public String generateSemester(int semesterNumber) { return generateTimetableForSemester(semesterNumber); }
-
-    private String generateForType(SemesterType type) {
-        List<Integer> sems = (type==SemesterType.ODD) ? List.of(1,3,5,7) : List.of(2,4,6,8);
-        long t0 = System.currentTimeMillis();
-        StringBuilder sb = new StringBuilder();
-        for (int s : sems) sb.append(generateTimetableForSemester(s)).append('\n');
-        return "✅ Timetables generated in " + (System.currentTimeMillis()-t0) + " ms\n" + sb;
-    }
-
-    @Transactional
-    public String generateTimetableForSemester(int semNumber) {
-        // 0) Load base data
-        var sem = semesterRepository.findBySemesterNumber(semNumber)
-                .orElseThrow(() -> new IllegalArgumentException("Semester not found: " + semNumber));
-        List<CourseOffering> offerings = courseOfferingRepository
-                .findBySubject_Semester_SemesterNumber(semNumber);
-        if (offerings.isEmpty()) return "No offerings for semester " + semNumber;
-
-        List<SemesterDivision> semDivs = semesterDivisionRepository.findAll().stream()
-                .filter(sd -> sd.getSemester()!=null && sd.getSemester().getSemesterNumber()==semNumber)
-                .toList();
-        List<Division> divisions = semDivs.stream().map(SemesterDivision::getDivision).distinct().toList();
-
-        List<Classroom> rooms = classroomRepository.findAll();
-        List<TimeSlot> slots = timeSlotRepository.findAll().stream()
-                .sorted(Comparator.comparing(TimeSlot::getStartTime)).toList();
-        if (slots.isEmpty()) throw new IllegalStateException("No time slots defined");
-
-        // teachers by subject
-        List<TeacherSubjectAllocation> allocs = teacherSubjectAllocationRepository.findAll();
-        Map<Long,List<Teacher>> subjectTeachers = allocs.stream()
-                .filter(a -> a.getSubject()!=null && a.getTeacher()!=null)
-                .collect(Collectors.groupingBy(a -> a.getSubject().getId(),
-                        Collectors.mapping(TeacherSubjectAllocation::getTeacher, Collectors.toList())));
-        List<Teacher> allTeachers = allocs.stream().map(TeacherSubjectAllocation::getTeacher)
-                .filter(Objects::nonNull).distinct().toList();
-
-        // batches per division
-        Map<Long,List<Batch>> batchesByDiv = batchRepository.findAll().stream()
-                .filter(b -> b.getDivision()!=null)
-                .collect(Collectors.groupingBy(b -> b.getDivision().getId()));
-        List<Batch> allBatches = batchesByDiv.values().stream().flatMap(List::stream).distinct().toList();
-
-        // indices
-        Map<Long,Integer> divIdx = index(divisions, Division::getId);
-        Map<Long,Integer> roomIdx = index(rooms, Classroom::getId);
-        Map<Long,Integer> teacherIdx = index(allTeachers, Teacher::getId);
-        Map<Long,Integer> batchIdx = index(allBatches, Batch::getId);
-
-        // occupancy
-        int S = slots.size();
-        boolean[][][] divBusy = new boolean[divisions.size()][DAYS][S];   // division-level occupancy (lectures + fixed breaks/lunch)
-        boolean[][][] batchOcc= new boolean[allBatches.size()][DAYS][S];
-        boolean[][][] roomOcc = new boolean[rooms.size()][DAYS][S];
-        boolean[][][] teachOcc= new boolean[allTeachers.size()][DAYS][S];
-
-        // 1) Fixed break/lunch (4-group assignment)
-        int SB_10_00 = findSlotIndex(slots, 10, 0, 10, 15);
-        int SB_11_00 = findSlotIndex(slots, 11, 0, 11, 15);
-        int LN_12_15 = findSlotIndex(slots, 12, 15, 13, 15);
-        int LN_13_15 = findSlotIndex(slots, 13, 15, 14, 15);
-        if (SB_10_00<0 || SB_11_00<0 || LN_12_15<0 || LN_13_15<0)
-            throw new IllegalStateException("Required 10:00/11:00 short break and 12:15/13:15 lunch slots must exist in time_slots");
-
-        List<List<Division>> groups = splitIntoFourGroups(divisions, 20251112L); // deterministic shuffle
-        List<Division> g00 = groups.get(0);
-        List<Division> g01 = groups.get(1);
-        List<Division> g10 = groups.get(2);
-        List<Division> g11 = groups.get(3);
-
-        List<ScheduledClass> fixedRows = new ArrayList<>();
-        BiConsumer<Division,int[]> assignFixed = (div, pair) -> {
-            int sbIdx = pair[0], lnIdx = pair[1];
-            int di = divIdx.get(div.getId());
-            for (int day=0; day<DAYS; day++) {
-                // reserve occupancy
-                divBusy[di][day][sbIdx] = true;
-                divBusy[di][day][lnIdx] = true;
-
-                fixedRows.add(ScheduledClass.builder()
-                        .sessionType(SessionType.SHORT_BREAK)
-                        .division(div)
-                        .dayOfWeek(DayOfWeek.of(day+1))
-                        .timeSlot(slots.get(sbIdx))
-                        .teacher(null).classroom(null).batch(null).courseOffering(null)
-                        .build());
-
-                fixedRows.add(ScheduledClass.builder()
-                        .sessionType(SessionType.LUNCH)
-                        .division(div)
-                        .dayOfWeek(DayOfWeek.of(day+1))
-                        .timeSlot(slots.get(lnIdx))
-                        .teacher(null).classroom(null).batch(null).courseOffering(null)
-                        .build());
+            if (!validateContext(context)) {
+                log.error("Context validation failed for semester {}", semesterId);
+                return false;
             }
-        };
-        g00.forEach(d -> assignFixed.accept(d, new int[]{SB_10_00, LN_12_15}));
-        g01.forEach(d -> assignFixed.accept(d, new int[]{SB_10_00, LN_13_15}));
-        g10.forEach(d -> assignFixed.accept(d, new int[]{SB_11_00, LN_12_15}));
-        g11.forEach(d -> assignFixed.accept(d, new int[]{SB_11_00, LN_13_15}));
 
-        // 2) Build events from offerings
-        List<Event> events = new ArrayList<>();
-        for (CourseOffering co : offerings) {
-            for (Division d : divisions) {
-                for (int i=0;i<co.getLecPerWeek();i++) events.add(new Event(co,d,null, SessionType.LECTURE,1));
-                for (Batch b : batchesByDiv.getOrDefault(d.getId(), List.of())) {
-                    for (int i=0;i<co.getTutPerWeek();i++) events.add(new Event(co,d,b, SessionType.TUTORIAL,1));
-                    int lab = co.getLabPerWeek();
-                    for (int k=0;k<lab/2;k++) events.add(new Event(co,d,b, SessionType.LAB,2));
-                    if (lab%2!=0) events.add(new Event(co,d,b, SessionType.LAB,1));
+            List<Event> events = buildEventsOptimized(context);
+            log.info("Built {} events for semester {}", events.size(), semesterId);
+
+            // debug
+            log.error("TimeSlots: {}", context.timeSlots.size());
+            log.error("Classrooms: {}", context.allClassrooms.size());
+            log.error("Divisions: {}", context.divisions.size());
+            log.error("Offerings: {}", context.offerings.size());
+            log.error("Teacher allocations: {}", context.teacherAllocations.size());
+            log.error("Events: {}", events.size());
+
+            // Validate division lecture capacity (only lectures block division)
+            for (Division div : context.divisions) {
+                long lectureEventsForDiv = events.stream()
+                        .filter(e -> e.division.getId().equals(div.getId()) && e.isDivisionWide)
+                        .count();
+                int slotsPerDay = context.timeSlots.size();
+                int rawSlotsPerWeek = DAYS * slotsPerDay;
+                // subtract fixed break and lunch slots per week
+                int breaksPerWeek = DAYS; // one short break per day per division (if configured)
+                Integer lunchIdx = context.lunchGroups.get(div.getId());
+                int lunchesPerWeek = lunchIdx != null ? DAYS : 0;
+                int usableDivisionSlots = rawSlotsPerWeek - breaksPerWeek - lunchesPerWeek;
+                log.error("Division {} (id={}): lectureEvents={}, usableDivisionSlots={}",
+                        div.getDivisionName(), div.getId(), lectureEventsForDiv, usableDivisionSlots);
+
+                if (lectureEventsForDiv > usableDivisionSlots) {
+                    log.error("Division {} (id={}): Insufficient division slots {} < required {}",
+                            div.getDivisionName(), div.getId(), usableDivisionSlots, lectureEventsForDiv);
+                    return false;
                 }
             }
+
+            allocateFixedSlots(context);
+            sortEventsByDifficulty(events, context);
+            List<Assignment> assignments = new ArrayList<>(events.size());
+            preprocessConstraints(context);
+
+            boolean result = backtrackOptimized(events, 0, assignments, context, startTime);
+
+            if (result) {
+                persistSolutionOptimized(context, assignments);
+                long duration = System.currentTimeMillis() - startTime;
+                log.info("Timetable generated successfully in {} ms", duration);
+                return true;
+            } else {
+                log.error("Failed to find valid timetable");
+                return false;
+            }
+
+        } catch (Exception e) {
+            log.error("Error generating timetable for semester {}", semesterId, e);
+            return false;
+        }
+    }
+
+    private GenerationContext loadGenerationContextOptimized(Long semesterId) {
+        GenerationContext ctx = new GenerationContext();
+        ctx.semesterId = semesterId;
+
+        // parallel loads
+        ExecutorService executor = Executors.newFixedThreadPool(4);
+        try {
+            Future<List<TimeSlot>> timeSlotsFuture = executor.submit(() ->
+                    timeSlotRepository.findAll().stream()
+                            .sorted(Comparator.comparing(TimeSlot::getStartTime))
+                            .collect(Collectors.toList())
+            );
+
+            Future<List<Classroom>> classroomsFuture = executor.submit(() ->
+                    classroomRepository.findAll()
+            );
+
+            Future<List<SemesterDivision>> semesterDivisionsFuture = executor.submit(() ->
+                    semesterDivisionRepository.findBySemesterId(semesterId)
+            );
+
+            Future<List<CourseOffering>> offeringsFuture = executor.submit(() ->
+                    courseOfferingRepository.findBySemesterId(semesterId)
+            );
+
+            Future<List<TeacherSubjectAllocation>> allocationsFuture = executor.submit(() ->
+                    teacherSubjectAllocationRepository.findAll()
+            );
+
+            ctx.timeSlots = timeSlotsFuture.get();
+            ctx.allClassrooms = classroomsFuture.get();
+            ctx.semesterDivisions = semesterDivisionsFuture.get();
+            ctx.offerings = offeringsFuture.get();
+            ctx.teacherAllocations = allocationsFuture.get();
+
+        } catch (Exception e) {
+            log.error("Error loading context in parallel", e);
+            throw new RuntimeException("Failed to load generation context", e);
+        } finally {
+            executor.shutdown();
         }
 
-        // 3) Per-day spread (max 1 per offering per day at its scope)
-        Map<String,int[]> perDayCount = new HashMap<>();
-        Map<String,Integer> perDayCap = new HashMap<>();
-        for (Event e : events) {
-            String k = key(e);
-            perDayCount.computeIfAbsent(k, z -> new int[DAYS]);
-            perDayCap.put(k, 1);
+        ctx.classroomsByType = ctx.allClassrooms.stream()
+                .collect(Collectors.groupingBy(Classroom::getType));
+
+        ctx.divisions = ctx.semesterDivisions.stream()
+                .map(SemesterDivision::getDivision)
+                .distinct()
+                .collect(Collectors.toList());
+
+        ctx.batchesByDivision = new HashMap<>();
+        for (Division div : ctx.divisions) {
+            ctx.batchesByDivision.put(div.getId(), batchRepository.findByDivision_Id(div.getId()));
         }
 
-        // 4) Candidate domains (room type via String)
-        List<Classroom> lectRooms = rooms.stream()
-                .filter(r -> roomMatches(r.getType(), SessionType.LECTURE))
-                .toList();
-        List<Classroom> tutRooms  = rooms.stream()
-                .filter(r -> roomMatches(r.getType(), SessionType.TUTORIAL))
-                .toList();
-        List<Classroom> labRooms  = rooms.stream()
-                .filter(r -> roomMatches(r.getType(), SessionType.LAB))
-                .toList();
+        ctx.teachersBySubject = ctx.teacherAllocations.stream()
+                .collect(Collectors.groupingBy(
+                        alloc -> alloc.getSubject().getId(),
+                        Collectors.mapping(TeacherSubjectAllocation::getTeacher, Collectors.toList())
+                ));
 
-        Map<Event,List<Placement>> domains = new HashMap<>();
-        for (Event e : events) {
-            List<Classroom> candRooms = switch (e.type) {
-                case LAB -> labRooms.isEmpty()? rooms : labRooms;
-                case TUTORIAL -> tutRooms.isEmpty()? rooms : tutRooms;
-                default -> lectRooms.isEmpty()? rooms : lectRooms;
-            };
-            List<Teacher> candTeachers = subjectTeachers.getOrDefault(e.offering.getSubject().getId(), allTeachers);
-            List<Placement> poss = new ArrayList<>();
-            for (int day=0; day<DAYS; day++) {
-                for (int s0=0; s0<=S-e.len; s0++) {
-                    // skip if any part overlaps reserved division occupancy (break/lunch already reserved)
-                    if (!free(divBusy[divIdx.get(e.division.getId())][day], s0, e.len)) continue;
-                    // must be contiguous by time boundary
-                    if (!isContiguous(slots.subList(s0, s0+e.len))) continue;
+        int estimatedSlots = ctx.divisions.size() * DAYS * ctx.timeSlots.size();
+        ctx.divisionSchedule = new HashMap<>(estimatedSlots);
+        ctx.teacherSchedule = new HashMap<>(estimatedSlots);
+        ctx.roomSchedule = new HashMap<>(estimatedSlots);
+        ctx.batchSchedule = new HashMap<>(estimatedSlots);
+        ctx.dailySubjectCount = new HashMap<>();
+        ctx.lunchGroups = new HashMap<>();
+        ctx.shortBreakGroups = new HashMap<>(); // NEW: per-division short break slots
 
-                    for (Classroom room : candRooms) {
-                        for (Teacher t : candTeachers) {
-                            if (teacherUnavailable(t, slots.subList(s0, s0+e.len))) continue;
-                            poss.add(new Placement(day, s0, room, t, slots.subList(s0, s0+e.len)));
+        // precompute durations and contiguity
+        ctx.timeslotDurations = ctx.timeSlots.stream()
+                .map(ts -> Duration.between(ts.getStartTime(), ts.getEndTime()))
+                .collect(Collectors.toList());
+
+        ctx.timeSlotIndexById = new HashMap<>();
+        for (int i = 0; i < ctx.timeSlots.size(); i++) {
+            ctx.timeSlotIndexById.put(ctx.timeSlots.get(i).getId(), i);
+        }
+
+        // Precompute contiguous-next relations: next index is contiguous if end==next.start
+        ctx.contiguousNext = new HashMap<>();
+        for (int i = 0; i < ctx.timeSlots.size() - 1; i++) {
+            LocalTime end = ctx.timeSlots.get(i).getEndTime();
+            LocalTime nextStart = ctx.timeSlots.get(i + 1).getStartTime();
+            if (end.equals(nextStart)) {
+                ctx.contiguousNext.put(i, i + 1);
+            } else {
+                ctx.contiguousNext.put(i, -1);
+            }
+        }
+        if (!ctx.timeSlots.isEmpty()) {
+            ctx.contiguousNext.put(ctx.timeSlots.size() - 1, -1);
+        }
+
+        configureLunchSchedule(ctx);
+        configureShortBreakSchedule(ctx); // NEW: pick short-break index per division
+
+        return ctx;
+    }
+
+    private void preprocessConstraints(GenerationContext ctx) {
+        // only compute available division slots for lectures (division-level resource)
+        ctx.availableDivisionSlots = new HashMap<>();
+        for (Division div : ctx.divisions) {
+            int slotsPerWeek = DAYS * ctx.timeSlots.size();
+            int breaksPerWeek = DAYS; // one short break per day per division
+            Integer lunchSlot = ctx.lunchGroups.get(div.getId());
+            int lunchesPerWeek = lunchSlot != null ? DAYS : 0;
+            int usable = slotsPerWeek - breaksPerWeek - lunchesPerWeek;
+            ctx.availableDivisionSlots.put(div.getId(), usable);
+        }
+    }
+
+    private List<Event> buildEventsOptimized(GenerationContext ctx) {
+        List<Event> events = new ArrayList<>();
+
+        int eventId = 0;
+        for (CourseOffering offering : ctx.offerings) {
+            Subject subject = offering.getSubject();
+
+            for (SemesterDivision sd : ctx.semesterDivisions) {
+                Division division = sd.getDivision();
+                List<Batch> batches = ctx.batchesByDivision.get(division.getId());
+
+                // LECTURES: division-wide (all batches attend) => create lec_per_week events without batch
+                for (int i = 0; i < offering.getLecPerWeek(); i++) {
+                    Event e = createEvent(eventId++, offering, subject, division, null, "LECTURE", false);
+                    e.isDivisionWide = true;
+                    // lecture occupies 1 slot normally (could be longer if timeslots differ; we assume 1 slot).
+                    e.durationSlots = 1;
+                    events.add(e);
+                }
+
+                // TUTORIALS: per batch (if batches exist create for each batch)
+                if (offering.getTutPerWeek() > 0) {
+                    if (batches != null && !batches.isEmpty()) {
+                        for (Batch batch : batches) {
+                            for (int i = 0; i < offering.getTutPerWeek(); i++) {
+                                Event e = createEvent(eventId++, offering, subject, division, batch, "TUTORIAL", false);
+                                e.durationSlots = 1; // tutorials = 1 slot
+                                events.add(e);
+                            }
+                        }
+                    } else {
+                        // no batches -> tutorial acts like division-level (should not usually happen)
+                        for (int i = 0; i < offering.getTutPerWeek(); i++) {
+                            Event e = createEvent(eventId++, offering, subject, division, null, "TUTORIAL", false);
+                            e.durationSlots = 1;
+                            events.add(e);
+                        }
+                    }
+                }
+
+                // LABS: per batch, but labs are multi-slot continuous (2 hours)
+                if (offering.getLabPerWeek() > 0) {
+                    int labDurationMinutes = 120; // 2 hours
+                    int slotsNeeded = computeSlotsNeededForDuration(ctx, labDurationMinutes);
+                    if (slotsNeeded <= 0) {
+                        log.error("Cannot compute contiguous slot length for labs; timeslots may be too short or gaps exist");
+                        throw new RuntimeException("Invalid timeslot configuration for labs");
+                    }
+
+                    if (batches != null && !batches.isEmpty()) {
+                        for (Batch batch : batches) {
+                            for (int i = 0; i < offering.getLabPerWeek(); i++) {
+                                Event e = createEvent(eventId++, offering, subject, division, batch, "LAB", true);
+                                e.durationSlots = slotsNeeded;
+                                events.add(e);
+                            }
+                        }
+                    } else {
+                        for (int i = 0; i < offering.getLabPerWeek(); i++) {
+                            Event e = createEvent(eventId++, offering, subject, division, null, "LAB", true);
+                            e.durationSlots = slotsNeeded;
+                            events.add(e);
                         }
                     }
                 }
             }
-            domains.put(e, poss);
         }
 
-        // 5) Solve MRV + forward checking + idle-time scoring
-        List<Assign> sol = new ArrayList<>();
-        boolean ok = solve(events, domains, divBusy, batchOcc, roomOcc, teachOcc,
-                divIdx, batchIdx, roomIdx, teacherIdx, perDayCount, perDayCap, sol);
-        if (!ok) throw new IllegalStateException("No feasible timetable found");
+        return events;
+    }
 
-        // 6) Persist: clear existing rows for these divisions, then save breaks/lunch + classes
-        List<Long> divIds = divisions.stream().map(Division::getId).toList();
-        for (Long id : divIds) {
-            var existing = scheduledClassRepository.findByDivisionId(id);
-            scheduledClassRepository.deleteAll(existing);
+    private Event createEvent(int id, CourseOffering offering, Subject subject,
+                              Division division, Batch batch, String sessionType, boolean requiresLab) {
+        Event event = new Event();
+        event.id = id;
+        event.offering = offering;
+        event.subject = subject;
+        event.division = division;
+        event.batch = batch;
+        event.sessionType = sessionType;
+        event.requiresLab = requiresLab;
+        event.batches = batch != null ? Collections.singletonList(batch) : null;
+        event.isDivisionWide = "LECTURE".equals(sessionType);
+        return event;
+    }
+
+    private void sortEventsByDifficulty(List<Event> events, GenerationContext ctx) {
+        Map<Event, Integer> difficultyScores = new HashMap<>(events.size());
+        for (Event e : events) {
+            difficultyScores.put(e, calculateDifficultyScore(e, ctx));
         }
-        List<ScheduledClass> toSave = new ArrayList<>(fixedRows);
-        for (Assign a : sol) {
-            for (TimeSlot ts : a.p.block) {
-                ScheduledClass sc = ScheduledClass.builder()
-                        .courseOffering(a.e.offering)
-                        .division(a.e.division)
-                        .batch(a.e.batch)
-                        .teacher(a.p.teacher)
-                        .classroom(a.p.room)
-                        .sessionType(a.e.type)
-                        .dayOfWeek(DayOfWeek.of(a.p.day + 1))
-                        .timeSlot(ts)
-                        .build();
-                toSave.add(sc);
+        events.sort((a, b) -> Integer.compare(difficultyScores.get(b), difficultyScores.get(a)));
+    }
+
+    private int calculateDifficultyScore(Event event, GenerationContext ctx) {
+        int score = 0;
+        if (event.requiresLab) score += 1000;
+        int teacherCount = ctx.teachersBySubject.getOrDefault(event.subject.getId(), Collections.emptyList()).size();
+        score += (10 - teacherCount) * 100;
+        if (event.batch != null) score += 50;
+        // longer events (labs) are harder
+        score += event.durationSlots * 10;
+        return score;
+    }
+
+    private void configureLunchSchedule(GenerationContext ctx) {
+        List<Division> divList = new ArrayList<>(ctx.divisions);
+        int slotsNeeded = (int) Math.ceil(divList.size() / 3.0);
+        int lunchStartIndex = ctx.timeSlots.size() / 2 - slotsNeeded / 2;
+        if (lunchStartIndex < 0) lunchStartIndex = 0;
+        for (int i = 0; i < divList.size(); i++) {
+            int groupIndex = i / 3;
+            int lunchSlotIndex = lunchStartIndex + groupIndex;
+            if (lunchSlotIndex >= ctx.timeSlots.size()) lunchSlotIndex = ctx.timeSlots.size() - 1;
+            ctx.lunchGroups.put(divList.get(i).getId(), lunchSlotIndex);
+        }
+    }
+
+    /**
+     * NEW:
+     * Assign a short-break timeslot index for each division.
+     * Strategy:
+     * - Try to place short-break in the early slots, avoiding conflicts with that division's lunch slot.
+     * - Spread across a few early timeslots using modulo so not all divisions share same short break (optional).
+     */
+    private void configureShortBreakSchedule(GenerationContext ctx) {
+        if (ctx.timeSlots == null || ctx.timeSlots.isEmpty()) return;
+        List<Division> divList = new ArrayList<>(ctx.divisions);
+        int nSlots = ctx.timeSlots.size();
+
+        // Prefer early slots (e.g. first 1/3 of the day). If not available, fallback to 0..nSlots-1
+        int preferRange = Math.max(1, nSlots / 3);
+        if (preferRange == 0) preferRange = Math.min(1, nSlots);
+
+        // for stability, pick base index (1 usually means second slot). We'll spread using index i % preferRange
+        int base = 1;
+        if (base >= nSlots) base = 0;
+
+        for (int i = 0; i < divList.size(); i++) {
+            Division div = divList.get(i);
+            Integer lunchSlot = ctx.lunchGroups.get(div.getId());
+            // candidate slot
+            int candidate = base + (i % Math.max(1, preferRange));
+            if (candidate >= nSlots) candidate = nSlots - 1;
+
+            // ensure candidate != lunchSlot for this division; if equal, shift right until different (wrap)
+            int tries = 0;
+            while (Objects.equals(candidate, lunchSlot) && tries < nSlots) {
+                candidate = (candidate + 1) % nSlots;
+                tries++;
             }
+
+            ctx.shortBreakGroups.put(div.getId(), candidate);
         }
-        scheduledClassRepository.saveAll(toSave);
-        return "Semester " + semNumber + ": scheduled " + toSave.size() + " rows (incl. breaks/lunch)";
     }
 
-    // ---------- Solver ----------
-    private boolean solve(List<Event> events, Map<Event,List<Placement>> domains,
-                          boolean[][][] divBusy, boolean[][][] batchOcc,
-                          boolean[][][] roomOcc, boolean[][][] teachOcc,
-                          Map<Long,Integer> divIdx, Map<Long,Integer> batchIdx,
-                          Map<Long,Integer> roomIdx, Map<Long,Integer> teacherIdx,
-                          Map<String,int[]> perDayCount, Map<String,Integer> perDayCap,
-                          List<Assign> sol) {
-
-        if (domains.values().stream().allMatch(Objects::isNull)) return true;
-
-        Event e = events.stream().filter(x -> domains.get(x)!=null)
-                .min(Comparator.comparingInt(x -> domains.get(x).size())).orElse(null);
-        if (e==null) return true;
-
-        List<Placement> order = new ArrayList<>(domains.get(e));
-        order.sort(Comparator.comparingInt(p -> score(p, e, divBusy, batchOcc, divIdx, batchIdx)));
-
-        String key = key(e);
-        for (Placement p : order) {
-            int d = divIdx.get(e.division.getId());
-            Integer r = roomIdx.get(p.room.getId());
-            Integer t = teacherIdx.getOrDefault(p.teacher.getId(), -1);
-            if (r==null || t<0) continue;
-
-            if (perDayCount.get(key)[p.day] >= perDayCap.get(key)) continue;
-
-            if (e.type== SessionType.LECTURE) {
-                if (!free(divBusy[d][p.day], p.start, e.len)) continue;
-                if (!free(roomOcc[r][p.day], p.start, e.len)) continue;
-                if (!free(teachOcc[t][p.day], p.start, e.len)) continue;
-            } else {
-                if (!free(divBusy[d][p.day], p.start, e.len)) continue; // cannot clash with division occupancy (lectures/break/lunch)
-                int b = batchIdx.get(e.batch.getId());
-                if (!free(batchOcc[b][p.day], p.start, e.len)) continue;
-                if (!free(roomOcc[r][p.day], p.start, e.len)) continue;
-                if (!free(teachOcc[t][p.day], p.start, e.len)) continue;
-            }
-
-            boolean[] primary = (e.type== SessionType.LECTURE)
-                    ? divBusy[d][p.day] : batchOcc[batchIdx.get(e.batch.getId())][p.day];
-            occupy(primary, p.start, e.len, true);
-            occupy(roomOcc[r][p.day], p.start, e.len, true);
-            occupy(teachOcc[t][p.day], p.start, e.len, true);
-            perDayCount.get(key)[p.day]++;
-
-            Map<Event,List<Placement>> removed = prune(e, p, domains);
-            domains.put(e, null);
-            sol.add(new Assign(e, p));
-            if (solve(events, domains, divBusy, batchOcc, roomOcc, teachOcc,
-                    divIdx, batchIdx, roomIdx, teacherIdx, perDayCount, perDayCap, sol)) return true;
-
-            // backtrack
-            sol.remove(sol.size()-1);
-            occupy(primary, p.start, e.len, false);
-            occupy(roomOcc[r][p.day], p.start, e.len, false);
-            occupy(teachOcc[t][p.day], p.start, e.len, false);
-            perDayCount.get(key)[p.day]--;
-            for (var en : removed.entrySet()) domains.put(en.getKey(), en.getValue());
-            domains.put(e, order);
+    private boolean validateContext(GenerationContext ctx) {
+        if (ctx.timeSlots == null || ctx.timeSlots.isEmpty()) {
+            log.error("No timeslots defined");
+            return false;
         }
-        return false;
-    }
-
-    private Map<Event,List<Placement>> prune(Event chosen, Placement p, Map<Event,List<Placement>> domains) {
-        Map<Event,List<Placement>> removed = new HashMap<>();
-        for (var en : domains.entrySet()) {
-            Event ev = en.getKey(); List<Placement> dom = en.getValue(); if (dom==null) continue;
-            List<Placement> keep = new ArrayList<>();
-            for (Placement cand : dom) {
-                boolean conflict = false;
-                if (cand.day == p.day) {
-                    boolean sameDiv = ev.division.getId().equals(chosen.division.getId());
-                    boolean sameBatch = ev.batch!=null && chosen.batch!=null &&
-                                        ev.batch.getId().equals(chosen.batch.getId());
-                    if (sameDiv) {
-                        if (overlap(cand.start, ev.len, p.start, chosen.len)) conflict = true;
-                    }
-                    if (!conflict && sameBatch) {
-                        if (overlap(cand.start, ev.len, p.start, chosen.len)) conflict = true;
-                    }
-                }
-                if (!conflict) keep.add(cand);
-            }
-            if (keep.size()!=dom.size()) { removed.put(ev, dom); domains.put(ev, keep); }
+        if (ctx.divisions == null || ctx.divisions.isEmpty()) {
+            log.error("No divisions for semester");
+            return false;
         }
-        return removed;
-    }
+        if (ctx.offerings == null || ctx.offerings.isEmpty()) {
+            log.error("No course offerings for semester");
+            return false;
+        }
+        if (ctx.allClassrooms == null || ctx.allClassrooms.isEmpty()) {
+            log.error("No classrooms available");
+            return false;
+        }
 
-    // ---------- Helpers ----------
-    private static <T> Map<Long,Integer> index(List<T> list, java.util.function.Function<T,Long> idFn) {
-        Map<Long,Integer> m = new HashMap<>(); for (int i=0;i<list.size();i++) m.put(idFn.apply(list.get(i)), i); return m;
-    }
+        // ensure shortBreakGroups has entry for every division (fallback to index 0)
+        for (Division div : ctx.divisions) {
+            ctx.shortBreakGroups.putIfAbsent(div.getId(), 0);
+        }
 
-    private static boolean isContiguous(List<TimeSlot> block) {
-        for (int i=0;i<block.size()-1;i++) if (!block.get(i).getEndTime().equals(block.get(i+1).getStartTime())) return false;
         return true;
     }
 
-    private static boolean free(boolean[] occ, int s, int len) {
-        for (int i=s;i<s+len;i++) if (i>=occ.length || occ[i]) return false; return true;
+    private void allocateFixedSlots(GenerationContext ctx) {
+        // Use division-specific short break index
+        for (Division div : ctx.divisions) {
+            Integer shortBreakIndex = ctx.shortBreakGroups.get(div.getId());
+            if (shortBreakIndex == null || shortBreakIndex < 0 || shortBreakIndex >= ctx.timeSlots.size()) {
+                // fallback
+                shortBreakIndex = 0;
+                ctx.shortBreakGroups.put(div.getId(), shortBreakIndex);
+            }
+
+            for (int day = 0; day < DAYS; day++) {
+                SlotKey shortBreakKey = new SlotKey(div.getId(), day, shortBreakIndex);
+                ctx.divisionSchedule.put(shortBreakKey, "SHORT_BREAK");
+            }
+        }
+
+        // Lunch per-division (already in ctx.lunchGroups)
+        for (Division div : ctx.divisions) {
+            Integer lunchSlot = ctx.lunchGroups.get(div.getId());
+            if (lunchSlot != null) {
+                int lunchIndex = lunchSlot;
+                if (lunchIndex < 0 || lunchIndex >= ctx.timeSlots.size()) {
+                    continue;
+                }
+                for (int day = 0; day < DAYS; day++) {
+                    SlotKey lunchKey = new SlotKey(div.getId(), day, lunchIndex);
+                    ctx.divisionSchedule.put(lunchKey, "LUNCH");
+                }
+            }
+        }
     }
 
-    private static void occupy(boolean[] occ, int s, int len, boolean v) {
-        for (int i=s;i<s+len && i<occ.length;i++) occ[i]=v;
-    }
+    private boolean backtrackOptimized(List<Event> events, int eventIndex,
+                                       List<Assignment> assignments, GenerationContext ctx, long startTime) {
 
-    private static boolean overlap(int a, int al, int b, int bl) {
-        int ae=a+al-1, be=b+bl-1; return !(ae<b || be<a);
-    }
+        if (System.currentTimeMillis() - startTime > TimeUnit.MINUTES.toMillis(TIMEOUT_MINUTES)) {
+            log.warn("Timeout reached during backtracking");
+            return false;
+        }
+        if (eventIndex >= events.size()) return true;
 
-    private static boolean teacherUnavailable(Teacher t, List<TimeSlot> block) {
-        var u = t.getUnavailableTimeSlots();
-        if (u==null || u.isEmpty()) return false;
-        Set<Long> bad = new HashSet<>(u);
-        for (TimeSlot ts : block) if (bad.contains(ts.getId())) return true;
+        Event event = events.get(eventIndex);
+
+        // Basic early pruning: for division-wide lectures, check division available slots
+        if (event.isDivisionWide) {
+            Integer divAvail = ctx.availableDivisionSlots.get(event.division.getId());
+            if (divAvail == null || divAvail <= 0) return false;
+        }
+
+        for (int day = 0; day < DAYS; day++) {
+            for (int slotIdx = 0; slotIdx < ctx.timeSlots.size(); slotIdx++) {
+                // For multi-slot events (labs), check contiguous availability starting at slotIdx
+                if (slotIdx + event.durationSlots > ctx.timeSlots.size()) continue;
+                if (!areSlotsConsecutive(ctx, slotIdx, event.durationSlots)) continue;
+
+                // Check room candidates
+                List<Classroom> rooms = getAvailableRoomsOptimized(event, day, slotIdx, ctx);
+                if (rooms.isEmpty()) continue;
+
+                // Teachers
+                List<Teacher> teachers = getAvailableTeachersOptimized(event, day, slotIdx, ctx);
+                if (teachers.isEmpty()) continue;
+
+                for (Teacher teacher : teachers) {
+                    for (Classroom room : rooms) {
+                        if (isValidAssignmentOptimized(event, day, slotIdx, teacher, room, ctx)) {
+                            Assignment assignment = new Assignment(event, day, slotIdx, teacher, room, event.durationSlots);
+                            assignments.add(assignment);
+                            applyAssignment(assignment, ctx);
+
+                            if (backtrackOptimized(events, eventIndex + 1, assignments, ctx, startTime)) {
+                                return true;
+                            }
+
+                            undoAssignment(assignment, ctx);
+                            assignments.remove(assignments.size() - 1);
+                        }
+                    }
+                }
+            }
+        }
+
         return false;
     }
 
-    // deterministic 4-way split
-    private static List<List<Division>> splitIntoFourGroups(List<Division> divisions, long seed) {
-        List<Division> shuffled = new ArrayList<>(divisions);
-        Collections.shuffle(shuffled, new Random(seed));
-        List<List<Division>> groups = new ArrayList<>();
-        for (int i=0;i<4;i++) groups.add(new ArrayList<>());
-        for (int i=0;i<shuffled.size();i++) groups.get(i % 4).add(shuffled.get(i));
-        return groups;
+    private List<Teacher> getAvailableTeachersOptimized(Event event, int day, int slotIdx, GenerationContext ctx) {
+        List<Teacher> candidates = ctx.teachersBySubject.get(event.subject.getId());
+        if (candidates == null || candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Teacher> available = new ArrayList<>();
+        for (Teacher teacher : candidates) {
+            boolean ok = true;
+            // check all slots for event.durationSlots
+            for (int s = 0; s < event.durationSlots; s++) {
+                SlotKey tKey = new SlotKey(teacher.getId(), day, slotIdx + s);
+                if (ctx.teacherSchedule.containsKey(tKey)) {
+                    ok = false; break;
+                }
+            }
+            if (ok) available.add(teacher);
+        }
+        return available;
     }
 
-    // locate a slot by exact time
-    private static int findSlotIndex(List<TimeSlot> slots, int sh, int sm, int eh, int em) {
-        for (int i=0;i<slots.size();i++) {
-            var s = slots.get(i).getStartTime(); var e = slots.get(i).getEndTime();
-            if (s.getHour()==sh && s.getMinute()==sm && e.getHour()==eh && e.getMinute()==em) return i;
+    private List<Classroom> getAvailableRoomsOptimized(Event event, int day, int slotIdx, GenerationContext ctx) {
+        ClassroomType requiredType = event.requiresLab ? ClassroomType.LAB : ClassroomType.LECTURE;
+        List<Classroom> candidates = ctx.classroomsByType.getOrDefault(requiredType, Collections.emptyList());
+        if (candidates.isEmpty() && !event.requiresLab) {
+            candidates = ctx.classroomsByType.getOrDefault(ClassroomType.LAB, Collections.emptyList());
+        }
+
+        List<Classroom> available = new ArrayList<>();
+        for (Classroom room : candidates) {
+            boolean ok = true;
+            for (int s = 0; s < event.durationSlots; s++) {
+                SlotKey rKey = new SlotKey(room.getId(), day, slotIdx + s);
+                if (ctx.roomSchedule.containsKey(rKey)) { ok = false; break; }
+            }
+            if (ok) available.add(room);
+        }
+        return available;
+    }
+
+    private boolean isValidAssignmentOptimized(Event event, int day, int slotIdx,
+                                               Teacher teacher, Classroom room, GenerationContext ctx) {
+
+        // Division-wide (lecture) blocks division for all slots it covers
+        if (event.isDivisionWide) {
+            for (int s = 0; s < event.durationSlots; s++) {
+                SlotKey divSlot = new SlotKey(event.division.getId(), day, slotIdx + s);
+                if (ctx.divisionSchedule.containsKey(divSlot)) return false;
+            }
+        } else {
+            // If event is batch-specific we must ensure the batch is free
+            if (event.batch != null) {
+                for (int s = 0; s < event.durationSlots; s++) {
+                    SlotKey batchSlot = new SlotKey(event.batch.getId(), day, slotIdx + s);
+                    if (ctx.batchSchedule.containsKey(batchSlot)) return false;
+                }
+            }
+        }
+
+        // Teacher and room checks for all constituent slots
+        for (int s = 0; s < event.durationSlots; s++) {
+            SlotKey teacherSlot = new SlotKey(teacher.getId(), day, slotIdx + s);
+            if (ctx.teacherSchedule.containsKey(teacherSlot)) return false;
+            SlotKey roomSlot = new SlotKey(room.getId(), day, slotIdx + s);
+            if (ctx.roomSchedule.containsKey(roomSlot)) return false;
+        }
+
+        // daily subject count -- only meaningful for division-wide lectures
+        if (event.isDivisionWide) {
+            String dailyKey = event.division.getId() + "_" + event.subject.getId() + "_" + day;
+            int currentCount = ctx.dailySubjectCount.getOrDefault(dailyKey, 0);
+            if (currentCount >= MAX_SAME_SUBJECT_PER_DAY) return false;
+        }
+
+        return true;
+    }
+
+    private void applyAssignment(Assignment assignment, GenerationContext ctx) {
+        Event event = assignment.event;
+        int day = assignment.day;
+        int startSlot = assignment.slotIdx;
+
+        for (int s = 0; s < assignment.durationSlots; s++) {
+            int slot = startSlot + s;
+            SlotKey roomSlot = new SlotKey(assignment.room.getId(), day, slot);
+            ctx.roomSchedule.put(roomSlot, "OCCUPIED");
+
+            SlotKey teacherSlot = new SlotKey(assignment.teacher.getId(), day, slot);
+            ctx.teacherSchedule.put(teacherSlot, "OCCUPIED");
+
+            if (event.isDivisionWide) {
+                SlotKey divSlot = new SlotKey(event.division.getId(), day, slot);
+                ctx.divisionSchedule.put(divSlot, "OCCUPIED");
+            }
+            if (event.batch != null) {
+                SlotKey batchSlot = new SlotKey(event.batch.getId(), day, slot);
+                ctx.batchSchedule.put(batchSlot, "OCCUPIED");
+            }
+        }
+
+        if (event.isDivisionWide) {
+            String dailyKey = event.division.getId() + "_" + event.subject.getId() + "_" + assignment.day;
+            ctx.dailySubjectCount.put(dailyKey, ctx.dailySubjectCount.getOrDefault(dailyKey, 0) + 1);
+
+            Integer current = ctx.availableDivisionSlots.get(event.division.getId());
+            if (current != null) ctx.availableDivisionSlots.put(event.division.getId(), current - 1);
+        }
+    }
+
+    private void undoAssignment(Assignment assignment, GenerationContext ctx) {
+        Event event = assignment.event;
+        int day = assignment.day;
+        int startSlot = assignment.slotIdx;
+
+        for (int s = 0; s < assignment.durationSlots; s++) {
+            int slot = startSlot + s;
+            SlotKey roomSlot = new SlotKey(assignment.room.getId(), day, slot);
+            ctx.roomSchedule.remove(roomSlot);
+
+            SlotKey teacherSlot = new SlotKey(assignment.teacher.getId(), day, slot);
+            ctx.teacherSchedule.remove(teacherSlot);
+
+            if (event.isDivisionWide) {
+                SlotKey divSlot = new SlotKey(event.division.getId(), day, slot);
+                ctx.divisionSchedule.remove(divSlot);
+            }
+            if (event.batch != null) {
+                SlotKey batchSlot = new SlotKey(event.batch.getId(), day, slot);
+                ctx.batchSchedule.remove(batchSlot);
+            }
+        }
+
+        if (event.isDivisionWide) {
+            String dailyKey = event.division.getId() + "_" + event.subject.getId() + "_" + assignment.day;
+            ctx.dailySubjectCount.put(dailyKey, Math.max(0, ctx.dailySubjectCount.getOrDefault(dailyKey, 1) - 1));
+
+            Integer current = ctx.availableDivisionSlots.get(event.division.getId());
+            if (current != null) ctx.availableDivisionSlots.put(event.division.getId(), current + 1);
+        }
+    }
+
+    @Transactional
+    private void persistSolutionOptimized(GenerationContext ctx, List<Assignment> assignments) {
+        // delete existing scheduled classes for divisions in this semester
+        List<Long> divisionIds = ctx.divisions.stream().map(Division::getId).collect(Collectors.toList());
+        for (Long divId : divisionIds) {
+            scheduledClassRepository.deleteByDivisionId(divId);
+        }
+
+        List<ScheduledClass> scheduledClasses = new ArrayList<>();
+
+        for (Assignment assignment : assignments) {
+            Event ev = assignment.event;
+            for (int s = 0; s < assignment.durationSlots; s++) {
+                ScheduledClass sc = new ScheduledClass();
+                sc.setDivision(ev.division);
+                sc.setSubject(ev.subject);
+                sc.setTeacher(assignment.teacher);
+                sc.setClassroom(assignment.room);
+                sc.setTimeSlot(ctx.timeSlots.get(assignment.slotIdx + s));
+                sc.setDayOfWeek(DayOfWeek.of(assignment.day + 1));
+                sc.setSessionType(ev.sessionType);
+                sc.setCourseOffering(ev.offering);
+                if (ev.batch != null) sc.setBatch(ev.batch);
+                scheduledClasses.add(sc);
+            }
+        }
+
+        // add breaks (short + lunch) -- using division-specific shortBreakGroups
+        for (Division div : ctx.divisions) {
+            Integer shortSlot = ctx.shortBreakGroups.get(div.getId());
+            if (shortSlot == null) shortSlot = 0;
+            for (int day = 0; day < DAYS; day++) {
+                ScheduledClass shortBreak = new ScheduledClass();
+                shortBreak.setDivision(div);
+                shortBreak.setTimeSlot(ctx.timeSlots.get(shortSlot));
+                shortBreak.setDayOfWeek(DayOfWeek.of(day + 1));
+                shortBreak.setSessionType("SHORT_BREAK");
+                scheduledClasses.add(shortBreak);
+
+                Integer lunchSlot = ctx.lunchGroups.get(div.getId());
+                if (lunchSlot != null) {
+                    ScheduledClass lunch = new ScheduledClass();
+                    lunch.setDivision(div);
+                    lunch.setTimeSlot(ctx.timeSlots.get(lunchSlot));
+                    lunch.setDayOfWeek(DayOfWeek.of(day + 1));
+                    lunch.setSessionType("LUNCH");
+                    scheduledClasses.add(lunch);
+                }
+            }
+        }
+
+        List<List<ScheduledClass>> batches = partitionList(scheduledClasses, BATCH_SIZE);
+        for (List<ScheduledClass> batch : batches) {
+            scheduledClassRepository.saveAll(batch);
+        }
+
+        log.info("Persisted {} scheduled classes in {} batches", scheduledClasses.size(), batches.size());
+    }
+
+    private <T> List<List<T>> partitionList(List<T> list, int batchSize) {
+        List<List<T>> partitions = new ArrayList<>();
+        for (int i = 0; i < list.size(); i += batchSize) {
+            partitions.add(list.subList(i, Math.min(i + batchSize, list.size())));
+        }
+        return partitions;
+    }
+
+    /* ---------- Helper utils ---------- */
+
+    private boolean areSlotsConsecutive(GenerationContext ctx, int startIdx, int length) {
+        if (length <= 1) return true;
+        for (int i = 0; i < length - 1; i++) {
+            int cur = startIdx + i;
+            Integer next = ctx.contiguousNext.getOrDefault(cur, -1);
+            if (next == null || next == -1 || next != cur + 1) return false;
+        }
+        return true;
+    }
+
+    private int computeSlotsNeededForDuration(GenerationContext ctx, int minutes) {
+        // find minimal contiguous set of slots whose summed durations >= minutes
+        int n = ctx.timeSlots.size();
+        for (int start = 0; start < n; start++) {
+            int sum = 0;
+            int cur = start;
+            int cnt = 0;
+            while (cur < n) {
+                sum += (int) ctx.timeslotDurations.get(cur).toMinutes();
+                cnt++;
+                if (sum >= minutes) {
+                    // verify contiguity
+                    if (areSlotsConsecutive(ctx, start, cnt)) return cnt;
+                    else break;
+                }
+                Integer nxt = ctx.contiguousNext.getOrDefault(cur, -1);
+                if (nxt == null || nxt == -1) break;
+                cur = nxt;
+            }
         }
         return -1;
     }
 
-    private static String key(Event e) {
-        return (e.type== SessionType.LECTURE)
-                ? "L-"+e.offering.getId()+"-"+e.division.getId()
-                : "B-"+e.offering.getId()+"-"+e.batch.getId();
+    /* ---------- Inner classes ---------- */
+
+    private static class GenerationContext {
+        Long semesterId;
+        List<TimeSlot> timeSlots;
+        List<Classroom> allClassrooms;
+        Map<ClassroomType, List<Classroom>> classroomsByType;
+        List<SemesterDivision> semesterDivisions;
+        List<Division> divisions;
+        List<CourseOffering> offerings;
+        Map<Long, List<Batch>> batchesByDivision;
+        List<TeacherSubjectAllocation> teacherAllocations;
+        Map<Long, List<Teacher>> teachersBySubject;
+
+        Map<SlotKey, String> divisionSchedule;
+        Map<SlotKey, String> teacherSchedule;
+        Map<SlotKey, String> roomSchedule;
+        Map<SlotKey, String> batchSchedule;
+        Map<String, Integer> dailySubjectCount;
+        Map<Long, Integer> lunchGroups;
+
+        // NEW: short break groups per division
+        Map<Long, Integer> shortBreakGroups;
+
+        // optimization additions
+        Map<Long, Integer> availableDivisionSlots;
+
+        // timeslot helpers
+        List<Duration> timeslotDurations;
+        Map<Integer, Integer> contiguousNext;
+        Map<Long, Integer> timeSlotIndexById;
     }
 
-    // idle-time heuristic
-    private static int score(Placement p, Event e, boolean[][][] divBusy, boolean[][][] batchOcc,
-                             Map<Long,Integer> divIdx, Map<Long,Integer> batchIdx) {
-        int s = p.start;
-        boolean[] line = (e.type== SessionType.LECTURE)
-                ? divBusy[divIdx.get(e.division.getId())][p.day]
-                : batchOcc[batchIdx.get(e.batch.getId())][p.day];
-        if (p.start>0 && line[p.start-1]) s -= 50;
-        int end = p.start + e.len;
-        if (end<line.length && line[end]) s -= 40;
-        int first=Integer.MAX_VALUE, last=Integer.MIN_VALUE;
-        for (int i=0;i<line.length;i++) if (line[i]) { first=Math.min(first,i); last=Math.max(last,i); }
-        if (first!=Integer.MAX_VALUE) {
-            int nf=Math.min(first, p.start), nl=Math.max(last, p.start + e.len - 1);
-            s += (nl-nf+1 - (last-first+1)) * 5;
+    private static class Event {
+        int id;
+        CourseOffering offering;
+        Subject subject;
+        Division division;
+        Batch batch;
+        String sessionType;
+        boolean requiresLab;
+        List<Batch> batches;
+        boolean isDivisionWide = false;
+        int durationSlots = 1; // default 1 slot
+    }
+
+    private static class Assignment {
+        Event event;
+        int day;
+        int slotIdx;
+        Teacher teacher;
+        Classroom room;
+        int durationSlots;
+
+        Assignment(Event event, int day, int slotIdx, Teacher teacher, Classroom room, int durationSlots) {
+            this.event = event;
+            this.day = day;
+            this.slotIdx = slotIdx;
+            this.teacher = teacher;
+            this.room = room;
+            this.durationSlots = durationSlots;
         }
-        return s;
     }
 
-    // Room type matcher (String-based)
-    private static boolean roomMatches(String type, SessionType session) {
-        if (type == null || session == null) return false;
-        String t = type.trim().toUpperCase();
-        switch (session) {
-            case LAB:
-                return t.equals("LAB");
-            case TUTORIAL:
-                return t.equals("TUTORIAL") || t.equals("TUTORIAL_ROOM")
-                        || t.equals("LECTURE") || t.equals("LECTURE_HALL") || t.equals("CLASSROOM");
-            default: // LECTURE and others
-                return t.equals("LECTURE") || t.equals("LECTURE_HALL") || t.equals("CLASSROOM");
+    private static class SlotKey {
+        Long entityId;
+        int day;
+        int slotIdx;
+
+        SlotKey(Long entityId, int day, int slotIdx) {
+            this.entityId = entityId;
+            this.day = day;
+            this.slotIdx = slotIdx;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof SlotKey)) return false;
+            SlotKey slotKey = (SlotKey) o;
+            return day == slotKey.day && slotIdx == slotKey.slotIdx &&
+                    Objects.equals(entityId, slotKey.entityId);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(entityId, day, slotIdx);
         }
     }
 }

@@ -1,24 +1,34 @@
 package com.rspc.timetable.dto;
 
 import com.rspc.timetable.entities.SemesterDivision;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
 public class SemesterDivisionDTO {
+
     private Long id;
     private Long semesterId;
     private Long divisionId;
-    private String divisionName;
 
-    // Constructor to map from the entity
-    public SemesterDivisionDTO(SemesterDivision semesterDivision) {
-        this.id = semesterDivision.getId();
-        this.semesterId = semesterDivision.getSemester().getId();
-        this.divisionId = semesterDivision.getDivision().getId();
-        this.divisionName = semesterDivision.getDivision().getDivisionName();
+    public SemesterDivisionDTO() {
     }
+
+    public SemesterDivisionDTO(Long semesterId, Long divisionId) {
+        this.semesterId = semesterId;
+        this.divisionId = divisionId;
+    }
+
+    // NEW: constructor used in SemesterDivisionService
+    public SemesterDivisionDTO(SemesterDivision entity) {
+        this.id = entity.getId();
+        this.semesterId = entity.getSemester() != null ? entity.getSemester().getId() : null;
+        this.divisionId = entity.getDivision() != null ? entity.getDivision().getId() : null;
+    }
+
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+
+    public Long getSemesterId() { return semesterId; }
+    public void setSemesterId(Long semesterId) { this.semesterId = semesterId; }
+
+    public Long getDivisionId() { return divisionId; }
+    public void setDivisionId(Long divisionId) { this.divisionId = divisionId; }
 }

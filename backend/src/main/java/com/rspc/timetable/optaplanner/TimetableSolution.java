@@ -1,54 +1,69 @@
 package com.rspc.timetable.optaplanner;
 
-import com.rspc.timetable.entities.*;
-import lombok.Getter;
-import lombok.Setter;
-import org.optaplanner.core.api.domain.solution.PlanningSolution;
-import org.optaplanner.core.api.domain.solution.PlanningEntityCollectionProperty;
-import org.optaplanner.core.api.domain.solution.ProblemFactCollectionProperty;
-import org.optaplanner.core.api.domain.solution.PlanningScore;
+import com.rspc.timetable.entities.Classroom;
+import com.rspc.timetable.entities.TimeSlot;
+import org.optaplanner.core.api.domain.solution.*;
 import org.optaplanner.core.api.domain.valuerange.ValueRangeProvider;
 import org.optaplanner.core.api.score.buildin.hardsoft.HardSoftScore;
 
-import java.time.DayOfWeek;
 import java.util.List;
 
-@Getter @Setter
 @PlanningSolution
 public class TimetableSolution {
 
-    @ProblemFactCollectionProperty private List<Division>  divisions;
-    @ProblemFactCollectionProperty private List<Batch>     batches;
-    @ProblemFactCollectionProperty private List<Teacher>   teachers;
-    @ProblemFactCollectionProperty private List<Classroom> rooms;
-    @ProblemFactCollectionProperty private List<TimeSlot>  slots;
-    @ProblemFactCollectionProperty private List<ScheduledClass> pinnedRows;
-
-    @ValueRangeProvider(id = "dayRange")
     @ProblemFactCollectionProperty
-    private List<DayOfWeek> dayRange;
-
-    @ValueRangeProvider(id = "slotRange")
-    @ProblemFactCollectionProperty
-    private List<TimeSlot> slotRange;
-
-    @ValueRangeProvider(id = "roomRange")
-    @ProblemFactCollectionProperty
-    private List<Classroom> roomRange;
-
-    @ValueRangeProvider(id = "teacherRange")
-    @ProblemFactCollectionProperty
-    private List<Teacher> teacherRange;
-
-    @ValueRangeProvider(id = "classroomRange")
-    public List<Classroom> getClassroomRange() { return rooms; }
-
     @ValueRangeProvider(id = "timeSlotRange")
-    public List<TimeSlot> getTimeSlotRange() { return slots; }
+    private List<TimeSlot> timeSlotList;
+
+    @ProblemFactCollectionProperty
+    @ValueRangeProvider(id = "roomRange")
+    private List<Classroom> roomList;
 
     @PlanningEntityCollectionProperty
-    private List<PlannedClass> classes;
+    private List<PlannedClass> plannedClassList;
 
     @PlanningScore
     private HardSoftScore score;
+
+    public TimetableSolution() {}
+
+    public TimetableSolution(List<TimeSlot> timeSlotList,
+                             List<Classroom> roomList,
+                             List<PlannedClass> plannedClassList) {
+        this.timeSlotList = timeSlotList;
+        this.roomList = roomList;
+        this.plannedClassList = plannedClassList;
+    }
+
+    public List<TimeSlot> getTimeSlotList() {
+        return timeSlotList;
+    }
+
+    public void setTimeSlotList(List<TimeSlot> timeSlotList) {
+        this.timeSlotList = timeSlotList;
+    }
+
+    public List<Classroom> getRoomList() {
+        return roomList;
+    }
+
+    public void setRoomList(List<Classroom> roomList) {
+        this.roomList = roomList;
+    }
+
+    public List<PlannedClass> getPlannedClassList() {
+        return plannedClassList;
+    }
+
+    public void setPlannedClassList(List<PlannedClass> plannedClassList) {
+        this.plannedClassList = plannedClassList;
+    }
+
+    public HardSoftScore getScore() {
+        return score;
+    }
+
+    public void setScore(HardSoftScore score) {
+        this.score = score;
+    }
 }

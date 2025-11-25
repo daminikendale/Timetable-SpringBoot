@@ -1,65 +1,66 @@
 package com.rspc.timetable.optaplanner;
 
-import com.rspc.timetable.entities.*;
-import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import com.rspc.timetable.entities.Classroom;
+import com.rspc.timetable.entities.ScheduledClass;
+import com.rspc.timetable.entities.TimeSlot;
 import org.optaplanner.core.api.domain.entity.PlanningEntity;
 import org.optaplanner.core.api.domain.lookup.PlanningId;
 import org.optaplanner.core.api.domain.variable.PlanningVariable;
 
-import java.time.DayOfWeek;
-
-@Entity
-@Getter
-@Setter
-@PlanningEntity(
-    difficultyComparatorClass = PlannedClassDifficultyComparator.class
-)
-@Table(name = "planned_classes")
+@PlanningEntity
 public class PlannedClass {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @PlanningId
     private Long id;
 
-    @PlanningId
-    private Long planningId;
+    private ScheduledClass scheduledClass;
 
-    @ManyToOne private CourseOffering courseOffering;
-    @ManyToOne private Division       division;
-    @ManyToOne private Batch          batch;
-
-    @ManyToOne
-    @PlanningVariable(valueRangeProviderRefs = {"teacherRange"})
-    private Teacher teacher;
-
-    @ManyToOne
-    @PlanningVariable(valueRangeProviderRefs = {"roomRange"})
-    private Classroom classroom;
-
-    @ManyToOne
-    @PlanningVariable(valueRangeProviderRefs = {"slotRange"})
+    @PlanningVariable(valueRangeProviderRefs = "timeSlotRange", nullable = true)
     private TimeSlot timeSlot;
 
-    @Enumerated(EnumType.STRING)
-    @PlanningVariable(valueRangeProviderRefs = {"dayRange"})
-    private DayOfWeek day;
+    @PlanningVariable(valueRangeProviderRefs = "roomRange", nullable = true)
+    private Classroom room;
 
-    @Enumerated(EnumType.STRING)
-    private SessionType sessionType;
+    public PlannedClass() {}
 
-    private int lengthSlots = 1;
+    public PlannedClass(ScheduledClass scheduledClass) {
+        this.scheduledClass = scheduledClass;
+        if (scheduledClass != null) {
+            this.id = scheduledClass.getId();
+            this.timeSlot = scheduledClass.getTimeSlot();
+            this.room = scheduledClass.getClassroom();
+        }
+    }
 
-    public Classroom getRoom() { return classroom; }
-    public void setRoom(Classroom room) { this.classroom = room; }
-    public TimeSlot getStartSlot() { return timeSlot; }
-    public void setStartSlot(TimeSlot slot) { this.timeSlot = slot; }
-    public CourseOffering getOffering() { return courseOffering; }
-    public void setOffering(CourseOffering co) { this.courseOffering = co; }
+    public Long getId() {
+        return id;
+    }
 
-    @PrePersist
-    public void assignPlanningId() {
-        if (planningId == null) planningId = (id != null) ? id : System.nanoTime();
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public ScheduledClass getScheduledClass() {
+        return scheduledClass;
+    }
+
+    public void setScheduledClass(ScheduledClass scheduledClass) {
+        this.scheduledClass = scheduledClass;
+    }
+
+    public TimeSlot getTimeSlot() {
+        return timeSlot;
+    }
+
+    public void setTimeSlot(TimeSlot timeSlot) {
+        this.timeSlot = timeSlot;
+    }
+
+    public Classroom getRoom() {
+        return room;
+    }
+
+    public void setRoom(Classroom room) {
+        this.room = room;
     }
 }
