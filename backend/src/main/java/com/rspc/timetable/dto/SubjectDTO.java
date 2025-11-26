@@ -12,22 +12,16 @@ public class SubjectDTO {
     private Long id;
     private String name;
     private String code;
-
-    // REGULAR, HONORS, ELECTIVE
     private Subject.SubjectCategory category;
-
-    // THEORY, LAB, TUTORIAL
-    private Subject.SubjectType type;
-
+    private Subject.SubjectType subjectType;
     private Long semesterId;
 
-    // Entity → DTO
     public SubjectDTO(Subject subject) {
         this.id = subject.getId();
         this.name = subject.getName();
         this.code = subject.getCode();
         this.category = subject.getCategory();
-        this.type = subject.getType();        // <── FIXED
+        this.subjectType = subject.getSubjectType();
         this.semesterId = subject.getSemester() != null ? subject.getSemester().getId() : null;
     }
 }

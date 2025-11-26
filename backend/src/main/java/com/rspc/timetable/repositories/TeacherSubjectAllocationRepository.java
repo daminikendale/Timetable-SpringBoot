@@ -27,4 +27,6 @@ public interface TeacherSubjectAllocationRepository extends JpaRepository<Teache
      * Finds all allocations for a specific teacher by their ID.
      */
     List<TeacherSubjectAllocation> findByTeacherId(Long teacherId);
+
+     List<TeacherSubjectAllocation> findBySubject_IdOrderByPriorityAsc(Long subjectId);
 }

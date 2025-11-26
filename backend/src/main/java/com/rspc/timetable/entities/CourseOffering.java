@@ -34,11 +34,6 @@ public class CourseOffering {
     @JoinColumn(name = "semester_id", nullable = false)
     private Semester semester;
 
-    // ⭐ REQUIRED FOR OPTAPLANNER (Fixes your error)
-    @ManyToOne
-    @JoinColumn(name = "teacher_id")
-    private Teacher teacher;
-
     // Weekly structure
     @Column(nullable = false)
     private int lecPerWeek;

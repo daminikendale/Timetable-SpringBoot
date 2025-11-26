@@ -3,14 +3,15 @@ package com.rspc.timetable.optaplanner;
 import com.rspc.timetable.entities.*;
 import lombok.Getter;
 import lombok.Setter;
-import org.optaplanner.core.api.domain.solution.PlanningSolution;
 import org.optaplanner.core.api.domain.solution.PlanningEntityCollectionProperty;
 import org.optaplanner.core.api.domain.solution.PlanningScore;
+import org.optaplanner.core.api.domain.solution.PlanningSolution;
 import org.optaplanner.core.api.domain.solution.ProblemFactCollectionProperty;
 import org.optaplanner.core.api.domain.valuerange.ValueRangeProvider;
 import org.optaplanner.core.api.score.buildin.hardsoft.HardSoftScore;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
 @Getter
 @Setter
@@ -27,7 +28,9 @@ public class TimetableSolution {
     @ValueRangeProvider(id = "rooms")
     private List<Classroom> roomList = new ArrayList<>();
 
+    // IMPORTANT: teacherList must be a problem fact and provide "teacherRange"
     @ProblemFactCollectionProperty
+    @ValueRangeProvider(id = "teacherRange")
     private List<Teacher> teacherList = new ArrayList<>();
 
     @ProblemFactCollectionProperty
@@ -39,7 +42,7 @@ public class TimetableSolution {
     @ProblemFactCollectionProperty
     private List<CourseOffering> offeringList = new ArrayList<>();
 
-    /* ------------------- DAY RANGE FIX 🔥 ------------------- */
+    /* ------------------- DAY RANGE ------------------- */
     @ValueRangeProvider(id = "dayRange")
     @ProblemFactCollectionProperty
     private List<Integer> dayRangeList = defaultDayRange(5);

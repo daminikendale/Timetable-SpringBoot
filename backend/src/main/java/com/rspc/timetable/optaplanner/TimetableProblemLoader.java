@@ -18,6 +18,7 @@ public class TimetableProblemLoader {
     private final CourseOfferingRepository courseOfferingRepository;
     private final BatchRepository batchRepository;
     private final ScheduledClassRepository scheduledClassRepository;
+    private final TeacherSubjectAllocationRepository teacherSubjectAllocationRepository;
 
     public TimetableProblemLoader(TimeSlotRepository timeSlotRepository,
                                   ClassroomRepository classroomRepository,
@@ -25,7 +26,9 @@ public class TimetableProblemLoader {
                                   SemesterDivisionRepository semesterDivisionRepository,
                                   CourseOfferingRepository courseOfferingRepository,
                                   BatchRepository batchRepository,
-                                  ScheduledClassRepository scheduledClassRepository) {
+                                  ScheduledClassRepository scheduledClassRepository,
+                                  TeacherSubjectAllocationRepository teacherSubjectAllocationRepository) {
+
         this.timeSlotRepository = timeSlotRepository;
         this.classroomRepository = classroomRepository;
         this.teacherRepository = teacherRepository;
@@ -33,54 +36,93 @@ public class TimetableProblemLoader {
         this.courseOfferingRepository = courseOfferingRepository;
         this.batchRepository = batchRepository;
         this.scheduledClassRepository = scheduledClassRepository;
+        this.teacherSubjectAllocationRepository = teacherSubjectAllocationRepository;
     }
 
     public TimetableSolution loadProblemForSemester(Long semesterId) {
+
         List<TimeSlot> timeSlots = timeSlotRepository.findAll()
-                .stream().sorted(Comparator.comparing(TimeSlot::getStartTime)).collect(Collectors.toList());
+                .stream().sorted(Comparator.comparing(TimeSlot::getStartTime))
+                .collect(Collectors.toList());
 
         List<Classroom> rooms = classroomRepository.findAll();
         List<Teacher> teachers = teacherRepository.findAll();
 
         List<SemesterDivision> sds = semesterDivisionRepository.findBySemesterId(semesterId);
-        List<Division> divisions = sds.stream().map(SemesterDivision::getDivision).distinct().collect(Collectors.toList());
+        List<Division> divisions = sds.stream()
+                .map(SemesterDivision::getDivision)
+                .distinct()
+                .collect(Collectors.toList());
+
         List<CourseOffering> offerings = courseOfferingRepository.findBySemester_Id(semesterId);
 
+        // batches per division (cached)
         Map<Long, List<Batch>> batchesByDivision = new HashMap<>();
         for (Division div : divisions) {
             batchesByDivision.put(div.getId(), batchRepository.findByDivision_Id(div.getId()));
         }
-        List<Batch> allBatches = batchesByDivision.values().stream().flatMap(Collection::stream).distinct().collect(Collectors.toList());
+        List<Batch> allBatches = batchesByDivision.values().stream()
+                .flatMap(Collection::stream)
+                .distinct()
+                .collect(Collectors.toList());
 
+        // --- load all teacher-subject allocations once and group by subject id ---
+        List<TeacherSubjectAllocation> allAlloc = teacherSubjectAllocationRepository.findAll();
+        Map<Long, List<TeacherSubjectAllocation>> allocBySubject = allAlloc.stream()
+                .collect(Collectors.groupingBy(a -> a.getSubject().getId()));
+
+        // Convert to ordered teacher lists (by priority)
+        Map<Long, List<Teacher>> eligibleBySubject = new HashMap<>();
+        for (Map.Entry<Long, List<TeacherSubjectAllocation>> e : allocBySubject.entrySet()) {
+            List<Teacher> ordered = e.getValue().stream()
+                    .sorted(Comparator.comparingInt(TeacherSubjectAllocation::getPriority))
+                    .map(TeacherSubjectAllocation::getTeacher)
+                    .collect(Collectors.toList());
+            eligibleBySubject.put(e.getKey(), ordered);
+        }
+
+        // Build PlannedClasses
         List<PlannedClass> plannedClasses = new ArrayList<>();
         long pcId = 0L;
+
         for (CourseOffering offering : offerings) {
+
+            Long subjectId = offering.getSubject() != null ? offering.getSubject().getId() : null;
+            List<Teacher> offeringEligible = subjectId == null ? Collections.emptyList() :
+                    eligibleBySubject.getOrDefault(subjectId, Collections.emptyList());
+
             for (SemesterDivision sd : sds) {
                 Division division = sd.getDivision();
 
-                // lectures
+                // Lectures
                 for (int i = 0; i < offering.getLecPerWeek(); i++) {
-                    plannedClasses.add(new PlannedClass(++pcId, offering, offering.getSubject(), division, null, "LECTURE", false, 1));
+                    PlannedClass pc = new PlannedClass(++pcId, offering, offering.getSubject(), division, null, "LECTURE", false, 1);
+                    pc.setEligibleTeachers(new ArrayList<>(offeringEligible));
+                    plannedClasses.add(pc);
                 }
 
                 List<Batch> batches = batchesByDivision.getOrDefault(division.getId(), Collections.emptyList());
 
-                // tutorials
+                // Tutorials
                 if (offering.getTutPerWeek() > 0) {
                     if (!batches.isEmpty()) {
                         for (Batch batch : batches) {
                             for (int i = 0; i < offering.getTutPerWeek(); i++) {
-                                plannedClasses.add(new PlannedClass(++pcId, offering, offering.getSubject(), division, batch, "TUTORIAL", false, 1));
+                                PlannedClass pc = new PlannedClass(++pcId, offering, offering.getSubject(), division, batch, "TUTORIAL", false, 1);
+                                pc.setEligibleTeachers(new ArrayList<>(offeringEligible));
+                                plannedClasses.add(pc);
                             }
                         }
                     } else {
                         for (int i = 0; i < offering.getTutPerWeek(); i++) {
-                            plannedClasses.add(new PlannedClass(++pcId, offering, offering.getSubject(), division, null, "TUTORIAL", false, 1));
+                            PlannedClass pc = new PlannedClass(++pcId, offering, offering.getSubject(), division, null, "TUTORIAL", false, 1);
+                            pc.setEligibleTeachers(new ArrayList<>(offeringEligible));
+                            plannedClasses.add(pc);
                         }
                     }
                 }
 
-                // labs (multi-slot)
+                // Labs (multi-slot)
                 if (offering.getLabPerWeek() > 0) {
                     int labMinutes = 120;
                     int labSlots = computeSlotsNeeded(labMinutes, timeSlots);
@@ -88,36 +130,41 @@ public class TimetableProblemLoader {
                     if (!batches.isEmpty()) {
                         for (Batch batch : batches) {
                             for (int i = 0; i < offering.getLabPerWeek(); i++) {
-                                plannedClasses.add(new PlannedClass(++pcId, offering, offering.getSubject(), division, batch, "LAB", true, labSlots));
+                                PlannedClass pc = new PlannedClass(++pcId, offering, offering.getSubject(), division, batch, "LAB", true, labSlots);
+                                pc.setEligibleTeachers(new ArrayList<>(offeringEligible));
+                                plannedClasses.add(pc);
                             }
                         }
                     } else {
                         for (int i = 0; i < offering.getLabPerWeek(); i++) {
-                            plannedClasses.add(new PlannedClass(++pcId, offering, offering.getSubject(), division, null, "LAB", true, labSlots));
+                            PlannedClass pc = new PlannedClass(++pcId, offering, offering.getSubject(), division, null, "LAB", true, labSlots);
+                            pc.setEligibleTeachers(new ArrayList<>(offeringEligible));
+                            plannedClasses.add(pc);
                         }
                     }
                 }
             }
         }
 
-        // placeholders
-        Map<Long,Integer> lunchGroups = configureLunchGroups(divisions, timeSlots);
-        Map<Long,Integer> shortBreakGroups = configureShortBreakGroups(divisions, timeSlots, lunchGroups);
+        // placeholders: lunch and short break (pre-assigned as fixed planned classes)
+        Map<Long, Integer> lunchGroups = configureLunchGroups(divisions, timeSlots);
+        Map<Long, Integer> shortBreakGroups = configureShortBreakGroups(divisions, timeSlots, lunchGroups);
 
         for (Division div : divisions) {
             int lunchIdx = lunchGroups.getOrDefault(div.getId(), 0);
             PlannedClass lunch = new PlannedClass(++pcId, null, null, div, null, "LUNCH", false, 1);
             lunch.setDay(0);
-            lunch.setTimeSlot(timeSlots.get(lunchIdx));
+            lunch.setTimeSlot(timeSlots.get(Math.min(lunchIdx, timeSlots.size() - 1)));
             plannedClasses.add(lunch);
 
             int sbIdx = shortBreakGroups.getOrDefault(div.getId(), 0);
             PlannedClass sb = new PlannedClass(++pcId, null, null, div, null, "SHORT_BREAK", false, 1);
             sb.setDay(0);
-            sb.setTimeSlot(timeSlots.get(sbIdx));
+            sb.setTimeSlot(timeSlots.get(Math.min(sbIdx, timeSlots.size() - 1)));
             plannedClasses.add(sb);
         }
 
+        // Build final solution
         TimetableSolution problem = new TimetableSolution();
         problem.setTimeSlotList(timeSlots);
         problem.setRoomList(rooms);
@@ -149,6 +196,7 @@ public class TimetableProblemLoader {
 
     private Map<Long,Integer> configureLunchGroups(List<Division> divisions, List<TimeSlot> timeSlots) {
         Map<Long,Integer> map = new HashMap<>();
+        if (divisions.isEmpty() || timeSlots.isEmpty()) return map;
         int slotsNeeded = (int)Math.ceil(divisions.size() / 3.0);
         int lunchStartIndex = timeSlots.size()/2 - slotsNeeded/2;
         if (lunchStartIndex < 0) lunchStartIndex = 0;
@@ -163,6 +211,7 @@ public class TimetableProblemLoader {
 
     private Map<Long,Integer> configureShortBreakGroups(List<Division> divisions, List<TimeSlot> timeSlots, Map<Long,Integer> lunchGroups) {
         Map<Long,Integer> map = new HashMap<>();
+        if (divisions.isEmpty() || timeSlots.isEmpty()) return map;
         int n = timeSlots.size();
         int preferRange = Math.max(1, n/3);
         int base = 1; if (base >= n) base = 0;

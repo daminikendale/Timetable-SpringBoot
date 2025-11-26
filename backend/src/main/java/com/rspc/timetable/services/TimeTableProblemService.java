@@ -24,12 +24,16 @@ public class TimeTableProblemService {
     private final TimeSlotRepository timeRepo;
     private final ScheduledClassRepository scheduledRepo;
 
-    public TimetableSolution load(Long semId) {
+    // -----------------------------
+    // LOAD PROBLEM FOR OPTAPLANNER
+    // -----------------------------
+    public TimetableSolution load(Long semesterId) {
+
         List<Classroom> rooms = classroomRepo.findAll();
         List<TimeSlot> slots = timeRepo.findAll();
 
-        List<ScheduledClass> scheduled = 
-                scheduledRepo.findByCourseOffering_Semester_Id(semId);
+        List<ScheduledClass> scheduled =
+                scheduledRepo.findByCourseOffering_Semester_Id(semesterId);
 
         List<PlannedClass> planned = scheduled.stream()
                 .map(this::toPlannedClass)
@@ -48,34 +52,47 @@ public class TimeTableProblemService {
         return solution;
     }
 
-    public void save(TimetableSolution solution) {
+
+    // -----------------------------
+    // SAVE OPTIMIZED SOLUTION
+    // -----------------------------
+    public void saveSolution(TimetableSolution solution, Long semesterId) {
+
         if (solution == null || solution.getPlannedClassList() == null) return;
 
         for (PlannedClass pc : solution.getPlannedClassList()) {
+
             Long id = pc.getId();
             if (id == null) continue;
 
-            Optional<ScheduledClass> optionalSc = scheduledRepo.findById(id);
-            optionalSc.ifPresent(sc -> {
+            Optional<ScheduledClass> optional = scheduledRepo.findById(id);
+
+            optional.ifPresent(sc -> {
+
                 sc.setClassroom(pc.getRoom());
                 sc.setTimeSlot(pc.getTimeSlot());
                 sc.setTeacher(pc.getTeacher());
+
                 scheduledRepo.save(sc);
             });
         }
     }
 
-    private PlannedClass toPlannedClass(ScheduledClass sc) {
-        return new PlannedClass(
-        sc.getId(),
-        sc.getCourseOffering(),
-        sc.getSubject(),
-        sc.getDivision(),
-        sc.getBatch(),
-        sc.getSessionType(),
-        false, // multi-slot? No
-        1      // single slot
-);
 
+    // -----------------------------
+    // HELPERS
+    // -----------------------------
+    private PlannedClass toPlannedClass(ScheduledClass sc) {
+
+        return new PlannedClass(
+                sc.getId(),
+                sc.getCourseOffering(),
+                sc.getSubject(),
+                sc.getDivision(),
+                sc.getBatch(),
+                sc.getSessionType(),
+                false,   // multi-slot? No
+                1        // duration = 1
+        );
     }
 }

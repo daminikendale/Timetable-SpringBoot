@@ -7,6 +7,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Optional;
+
 @RestController
 @RequestMapping("/api/optimize")
 @CrossOrigin(origins = "*")
@@ -17,10 +19,26 @@ public class OptimizeController {
     private final TimetableOptaPlannerService solverService;
 
     @PostMapping("/run/{semesterId}")
-    public ResponseEntity<TimetableSolution> run(@PathVariable Long semesterId) {
-        TimetableSolution problem = problemService.load(semesterId);
-        TimetableSolution solved = solverService.solve(problem);
-        problemService.save(solved);
+    public ResponseEntity<?> run(@PathVariable Long semesterId) {
+
+        Long jobId = solverService.startSolving(semesterId);
+
+        Optional<TimetableSolution> result;
+        int attempts = 0;
+
+        do {
+            try { Thread.sleep(500); } catch (Exception ignored) {}
+            result = solverService.getResult(semesterId);
+            attempts++;
+        } while (result.isEmpty() && attempts < 20);
+
+        if (result.isEmpty()) {
+            return ResponseEntity.accepted().body("Solver still running... jobId = " + jobId);
+        }
+
+        TimetableSolution solved = result.get();
+        problemService.saveSolution(solved, semesterId);
+
         return ResponseEntity.ok(solved);
     }
 }

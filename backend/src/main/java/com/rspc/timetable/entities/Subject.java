@@ -2,6 +2,7 @@ package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
 import lombok.*;
+
 @Entity
 @Getter
 @Setter
@@ -22,6 +23,7 @@ public class Subject {
 
     // REGULAR, HONORS, ELECTIVE
     @Enumerated(EnumType.STRING)
+    @Column(name = "category")
     private SubjectCategory category;
 
     public enum SubjectCategory {
@@ -32,7 +34,8 @@ public class Subject {
 
     // THEORY, LAB, TUTORIAL
     @Enumerated(EnumType.STRING)
-    private SubjectType type;
+    @Column(name = "subject_type")
+    private SubjectType subjectType;
 
     public enum SubjectType {
         THEORY,

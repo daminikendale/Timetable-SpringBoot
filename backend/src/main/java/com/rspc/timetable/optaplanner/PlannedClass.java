@@ -2,16 +2,22 @@ package com.rspc.timetable.optaplanner;
 
 import com.rspc.timetable.entities.*;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.optaplanner.core.api.domain.entity.PlanningEntity;
 import org.optaplanner.core.api.domain.variable.PlanningVariable;
+import org.optaplanner.core.api.domain.valuerange.ValueRangeProvider;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Getter
 @Setter
+@NoArgsConstructor
 @PlanningEntity
 public class PlannedClass {
 
-    private Long id; // ❗ No @PlanningId in OptaPlanner 9.x
+    private Long id;
 
     private CourseOffering offering;
     private Subject subject;
@@ -19,9 +25,11 @@ public class PlannedClass {
     private Batch batch;
     private String sessionType;
 
+    // The solver will choose a teacher. We provide two value ranges:
+    // "eligibleTeacherRange" (per-class) and "teacherRange" (global from solution).
+    @PlanningVariable(valueRangeProviderRefs = { "eligibleTeacherRange", "teacherRange" })
     private Teacher teacher;
 
-    // -------- Planning Variables --------
     @PlanningVariable(valueRangeProviderRefs = "dayRange")
     private Integer day;
 
@@ -31,11 +39,17 @@ public class PlannedClass {
     @PlanningVariable(valueRangeProviderRefs = "rooms")
     private Classroom room;
 
-    // Multi slot support
+    // Multi slot support (for labs)
     private boolean multiSlot;
-    private int slotCount;
+    private int slotCount = 1;
 
-    public PlannedClass() {}
+    // Per-class eligible teachers (populated at problem load time)
+    private List<Teacher> eligibleTeachers = new ArrayList<>();
+
+    @ValueRangeProvider(id = "eligibleTeacherRange")
+    public List<Teacher> provideEligibleTeacherRange() {
+        return eligibleTeachers == null ? new ArrayList<>() : eligibleTeachers;
+    }
 
     public PlannedClass(Long id,
                         CourseOffering offering,
@@ -53,10 +67,5 @@ public class PlannedClass {
         this.sessionType = sessionType;
         this.multiSlot = multiSlot;
         this.slotCount = slotCount;
-
-        // Auto teacher assign
-        if (offering != null) {
-            this.teacher = offering.getTeacher();
-        }
     }
 }

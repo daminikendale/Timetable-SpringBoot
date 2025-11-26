@@ -5,8 +5,10 @@ import com.rspc.timetable.entities.Semester;
 import com.rspc.timetable.entities.Subject;
 import com.rspc.timetable.repositories.SemesterRepository;
 import com.rspc.timetable.repositories.SubjectRepository;
+
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,43 +22,26 @@ public class SubjectService {
     private final SubjectRepository subjectRepository;
     private final SemesterRepository semesterRepository;
 
-    // Map DTO -> Entity (shared by create/update/bulk)
     private void mapDtoToEntity(SubjectDTO dto, Subject entity) {
 
         entity.setName(dto.getName());
         entity.setCode(dto.getCode());
 
-        // --- Handle Category (REGULAR, HONORS, ELECTIVE) ---
-        if (dto.getCategory() != null) {
-            entity.setCategory(dto.getCategory());   // enums match directly
-        } else {
-            entity.setCategory(null);
-        }
+        // Category
+        entity.setCategory(dto.getCategory());
 
-        // --- Handle SubjectType (THEORY, LAB, TUTORIAL) ---
-        if (dto.getType() != null) {
-            entity.setType(dto.getType());           // FIXED: setType()
-        } else {
-            entity.setType(null);
-        }
+        // Subject Type (Theory/Lab/Tutorial)
+        entity.setSubjectType(dto.getSubjectType());
 
-        // --- Semester mapping ---
-        if (dto.getSemesterId() == null) {
-            throw new IllegalArgumentException("Semester ID is required.");
-        }
-
+        // Semester
         Semester semester = semesterRepository.findById(dto.getSemesterId())
-            .orElseThrow(() ->
-                new EntityNotFoundException("Semester not found with id: " + dto.getSemesterId())
-            );
-
+                .orElseThrow(() -> new EntityNotFoundException("Semester not found: " + dto.getSemesterId()));
         entity.setSemester(semester);
     }
 
     @Transactional(readOnly = true)
     public List<SubjectDTO> getAllSubjects() {
-        return subjectRepository.findAll()
-                .stream()
+        return subjectRepository.findAll().stream()
                 .map(SubjectDTO::new)
                 .collect(Collectors.toList());
     }
@@ -65,38 +50,30 @@ public class SubjectService {
     public SubjectDTO getSubjectById(Long id) {
         return subjectRepository.findById(id)
                 .map(SubjectDTO::new)
-                .orElseThrow(() -> 
-                    new EntityNotFoundException("Subject not found with id: " + id)
-                );
+                .orElseThrow(() -> new EntityNotFoundException("Subject not found with id: " + id));
     }
 
     @Transactional
-    public SubjectDTO createSubject(SubjectDTO subjectDTO) {
-
-        subjectRepository.findByCode(subjectDTO.getCode()).ifPresent(s -> {
-            throw new IllegalArgumentException(
-                "Subject with code " + subjectDTO.getCode() + " already exists."
-            );
+    public SubjectDTO createSubject(SubjectDTO dto) {
+        subjectRepository.findByCode(dto.getCode()).ifPresent(s -> {
+            throw new IllegalArgumentException("Subject with code " + dto.getCode() + " already exists.");
         });
 
-        Subject newSubject = new Subject();
-        mapDtoToEntity(subjectDTO, newSubject);
+        Subject subject = new Subject();
+        mapDtoToEntity(dto, subject);
 
-        return new SubjectDTO(subjectRepository.save(newSubject));
+        return new SubjectDTO(subjectRepository.save(subject));
     }
 
     @Transactional
-    public List<SubjectDTO> createSubjectsBulk(List<SubjectDTO> dtos) {
+    public List<SubjectDTO> createSubjectsBulk(List<SubjectDTO> dtoList) {
+        List<Subject> entities = dtoList.stream().map(dto -> {
+            Subject subject = new Subject();
+            mapDtoToEntity(dto, subject);
+            return subject;
+        }).collect(Collectors.toList());
 
-        List<Subject> subjects = dtos.stream()
-                .map(dto -> {
-                    Subject s = new Subject();
-                    mapDtoToEntity(dto, s);
-                    return s;
-                })
-                .collect(Collectors.toList());
-
-        return subjectRepository.saveAll(subjects)
+        return subjectRepository.saveAll(entities)
                 .stream()
                 .map(SubjectDTO::new)
                 .collect(Collectors.toList());
@@ -104,23 +81,18 @@ public class SubjectService {
 
     @Transactional
     public SubjectDTO updateSubject(Long id, SubjectDTO dto) {
+        Subject subject = subjectRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Subject not found with id: " + id));
 
-        Subject entity = subjectRepository.findById(id)
-                .orElseThrow(() ->
-                    new EntityNotFoundException("Subject not found with id: " + id)
-                );
+        mapDtoToEntity(dto, subject);
 
-        mapDtoToEntity(dto, entity);
-
-        return new SubjectDTO(subjectRepository.save(entity));
+        return new SubjectDTO(subjectRepository.save(subject));
     }
 
     @Transactional
     public void deleteSubject(Long id) {
         if (!subjectRepository.existsById(id)) {
-            throw new EntityNotFoundException(
-                "Cannot delete. Subject not found with id: " + id
-            );
+            throw new EntityNotFoundException("Subject not found with id: " + id);
         }
         subjectRepository.deleteById(id);
     }
