@@ -20,19 +20,22 @@ public interface ScheduledClassRepository extends JpaRepository<ScheduledClass, 
     // Used by delete
     List<ScheduledClass> findByDivision_Id(Long divisionId);
 
-    // Required (fix)
+    // Required
     List<ScheduledClass> findByTeacher_Id(Long teacherId);
 
-    List<ScheduledClass> findByTeacher_IdAndDayOfWeekAndTimeSlot_Id(Long teacherId, DayOfWeek dayOfWeek, Long timeSlotId);
+    List<ScheduledClass> findByTeacher_IdAndDayOfWeekAndTimeSlot_Id(
+            Long teacherId, DayOfWeek dayOfWeek, Long timeSlotId);
 
     List<ScheduledClass> findAllByTeacher_IdAndDayOfWeekAndTimeSlot_IdBetween(
             Long teacherId, DayOfWeek dayOfWeek, Long startTimeSlotId, Long endTimeSlotId);
 
+    // Filter by semester through subject.semester_id (if subject -> semester exists)
     List<ScheduledClass> findBySubject_Semester_Id(Long semesterId);
 
     List<ScheduledClass> findByDivision_IdAndSubject_Semester_Id(Long divisionId, Long semesterId);
 
-    boolean existsByTeacher_IdAndDayOfWeekAndTimeSlot_Id(Long teacherId, DayOfWeek dayOfWeek, Long timeSlotId);
+    boolean existsByTeacher_IdAndDayOfWeekAndTimeSlot_Id(
+            Long teacherId, DayOfWeek dayOfWeek, Long timeSlotId);
 
     @Transactional
     void deleteByDivision_Id(Long divisionId);
@@ -41,4 +44,12 @@ public interface ScheduledClassRepository extends JpaRepository<ScheduledClass, 
     @Modifying
     @Query("DELETE FROM ScheduledClass sc WHERE sc.division.id = :divisionId")
     void deleteByDivisionId(Long divisionId);
+
+    // Use the courseOffering -> semester path (this is the correct derived query to get
+    // scheduled classes for a semester if ScheduledClass has a courseOffering relation).
+    List<ScheduledClass> findByCourseOffering_Semester_Id(Long semesterId);
+
+    // IMPORTANT: removed the invalid query "sc.semester" — ScheduledClass has no direct
+    // semester field. If you *do* have a field named semester in the entity later,
+    // re-introduce the appropriate method.
 }

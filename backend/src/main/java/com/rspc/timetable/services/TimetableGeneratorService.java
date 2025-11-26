@@ -123,7 +123,7 @@ public class TimetableGeneratorService {
             );
 
             Future<List<CourseOffering>> offeringsFuture = executor.submit(() ->
-                    courseOfferingRepository.findBySemesterId(semesterId)
+                    courseOfferingRepository.findBySemester_Id(semesterId)
             );
 
             Future<List<TeacherSubjectAllocation>> allocationsFuture = executor.submit(() ->

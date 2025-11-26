@@ -1,20 +1,27 @@
 package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
-import lombok.Data;
-import java.util.List;
+import lombok.Getter;
+import lombok.Setter;
 
-@Data
 @Entity
+@Getter
+@Setter
 @Table(name = "years")
 public class Year {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true, nullable = false)
-    private String yearName; // e.g., "2025-2026"
+    // Must match your DTO field yearName
+    @Column(nullable = false, unique = true)
+    private String yearName;
 
-    @OneToMany(mappedBy = "year", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<Semester> semesters;
+    // Optional: convenience constructor
+    public Year() {}
+
+    public Year(String yearName) {
+        this.yearName = yearName;
+    }
 }

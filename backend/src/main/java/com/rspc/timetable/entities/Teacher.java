@@ -15,7 +15,6 @@ public class Teacher {
     @Column(name = "name")
     private String name;
 
-    // Add these columns to match your service
     @Column(name = "email")
     private String email;
 
@@ -26,7 +25,7 @@ public class Teacher {
     @JoinColumn(name = "department_id")
     private Department department;
 
-    // Unavailability as a set of TimeSlot entities
+    // FINAL & CORRECT WAY TO MODEL UNAVAILABILITY
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "teacher_unavailable_timeslots",
@@ -35,7 +34,8 @@ public class Teacher {
     )
     private Set<TimeSlot> unavailableTimeSlots = new HashSet<>();
 
-    // getters/setters
+    // ---------------------- Getters & Setters ----------------------
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -52,7 +52,9 @@ public class Teacher {
     public void setDepartment(Department department) { this.department = department; }
 
     public Set<TimeSlot> getUnavailableTimeSlots() { return unavailableTimeSlots; }
+
     public void setUnavailableTimeSlots(Set<TimeSlot> unavailableTimeSlots) {
-        this.unavailableTimeSlots = (unavailableTimeSlots == null) ? new HashSet<>() : unavailableTimeSlots;
+        this.unavailableTimeSlots = 
+            (unavailableTimeSlots == null) ? new HashSet<>() : unavailableTimeSlots;
     }
 }

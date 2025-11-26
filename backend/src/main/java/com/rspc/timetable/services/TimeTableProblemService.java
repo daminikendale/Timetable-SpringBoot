@@ -8,53 +8,74 @@ import com.rspc.timetable.optaplanner.TimetableSolution;
 import com.rspc.timetable.repositories.ClassroomRepository;
 import com.rspc.timetable.repositories.ScheduledClassRepository;
 import com.rspc.timetable.repositories.TimeSlotRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class TimeTableProblemService {
 
-    private final ClassroomRepository classroomRepository;
-    private final TimeSlotRepository timeSlotRepository;
-    private final ScheduledClassRepository scheduledClassRepository;
+    private final ClassroomRepository classroomRepo;
+    private final TimeSlotRepository timeRepo;
+    private final ScheduledClassRepository scheduledRepo;
 
-    public TimeTableProblemService(
-            ClassroomRepository classroomRepository,
-            TimeSlotRepository timeSlotRepository,
-            ScheduledClassRepository scheduledClassRepository) {
-        this.classroomRepository = classroomRepository;
-        this.timeSlotRepository = timeSlotRepository;
-        this.scheduledClassRepository = scheduledClassRepository;
-    }
+    public TimetableSolution load(Long semId) {
+        List<Classroom> rooms = classroomRepo.findAll();
+        List<TimeSlot> slots = timeRepo.findAll();
 
-    @Transactional(readOnly = true)
-    public TimetableSolution loadProblem(Long semId) {
-        List<Classroom> rooms = classroomRepository.findAll();
-        List<TimeSlot> slots = timeSlotRepository.findAll();
+        List<ScheduledClass> scheduled = 
+                scheduledRepo.findByCourseOffering_Semester_Id(semId);
 
-        List<PlannedClass> planned = scheduledClassRepository.findAll()
-                .stream()
-                .map(PlannedClass::new)
+        List<PlannedClass> planned = scheduled.stream()
+                .map(this::toPlannedClass)
                 .collect(Collectors.toList());
 
-        return new TimetableSolution(slots, rooms, planned);
+        TimetableSolution solution = new TimetableSolution();
+        solution.setTimeSlotList(slots);
+        solution.setRoomList(rooms);
+        solution.setPlannedClassList(planned);
+
+        solution.setTeacherList(Collections.emptyList());
+        solution.setDivisionList(Collections.emptyList());
+        solution.setBatchList(Collections.emptyList());
+        solution.setOfferingList(Collections.emptyList());
+
+        return solution;
     }
 
-    @Transactional
-    public void saveSolution(TimetableSolution solution) {
+    public void save(TimetableSolution solution) {
         if (solution == null || solution.getPlannedClassList() == null) return;
 
         for (PlannedClass pc : solution.getPlannedClassList()) {
-            if (pc == null) continue;
-            ScheduledClass sc = pc.getScheduledClass();
-            if (sc == null) continue;
+            Long id = pc.getId();
+            if (id == null) continue;
 
-            sc.setClassroom(pc.getRoom());
-            sc.setTimeSlot(pc.getTimeSlot());
-            scheduledClassRepository.save(sc);
+            Optional<ScheduledClass> optionalSc = scheduledRepo.findById(id);
+            optionalSc.ifPresent(sc -> {
+                sc.setClassroom(pc.getRoom());
+                sc.setTimeSlot(pc.getTimeSlot());
+                sc.setTeacher(pc.getTeacher());
+                scheduledRepo.save(sc);
+            });
         }
+    }
+
+    private PlannedClass toPlannedClass(ScheduledClass sc) {
+        return new PlannedClass(
+        sc.getId(),
+        sc.getCourseOffering(),
+        sc.getSubject(),
+        sc.getDivision(),
+        sc.getBatch(),
+        sc.getSessionType(),
+        false, // multi-slot? No
+        1      // single slot
+);
+
     }
 }

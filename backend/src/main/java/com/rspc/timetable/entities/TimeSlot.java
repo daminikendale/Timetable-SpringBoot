@@ -1,6 +1,7 @@
 package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
+import java.time.DayOfWeek;
 import java.time.LocalTime;
 
 @Entity
@@ -11,6 +12,11 @@ public class TimeSlot {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // NEW FIELD — REQUIRED FOR OPTAPLANNER
+    @Enumerated(EnumType.STRING)
+    @Column(name = "day_of_week", nullable = false)
+    private DayOfWeek dayOfWeek;     // MONDAY, TUESDAY, etc.
+
     @Column(name = "start_time", nullable = false)
     private LocalTime startTime;
 
@@ -20,27 +26,25 @@ public class TimeSlot {
     @Column(name = "slot_number")
     private Integer slotNumber;
 
-    // Optional: If you need to categorize slots
-    // @Enumerated(EnumType.STRING)
-    // @Column(name = "slot_type")
-    // private SlotType slotType;
-
-    // Constructors
     public TimeSlot() {}
 
-    public TimeSlot(LocalTime startTime, LocalTime endTime, Integer slotNumber) {
+    public TimeSlot(DayOfWeek dayOfWeek, LocalTime startTime, LocalTime endTime, Integer slotNumber) {
+        this.dayOfWeek = dayOfWeek;
         this.startTime = startTime;
         this.endTime = endTime;
         this.slotNumber = slotNumber;
     }
 
-    // Getters and Setters
     public Long getId() {
         return id;
     }
 
-    public void setId(Long id) {
-        this.id = id;
+    public DayOfWeek getDayOfWeek() {
+        return dayOfWeek;
+    }
+
+    public void setDayOfWeek(DayOfWeek dayOfWeek) {
+        this.dayOfWeek = dayOfWeek;
     }
 
     public LocalTime getStartTime() {

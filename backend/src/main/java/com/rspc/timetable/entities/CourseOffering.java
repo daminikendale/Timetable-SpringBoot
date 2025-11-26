@@ -1,8 +1,12 @@
 package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 
 @Entity
+@Getter
+@Setter
 @Table(name = "course_offerings")
 public class CourseOffering {
 
@@ -10,61 +14,41 @@ public class CourseOffering {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Relations
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "subject_id")
+    // Subject being taught
+    @ManyToOne
+    @JoinColumn(name = "subject_id", nullable = false)
     private Subject subject;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "department_id")
+    // Department
+    @ManyToOne
+    @JoinColumn(name = "department_id", nullable = false)
     private Department department;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "year_id")
+    // Year
+    @ManyToOne
+    @JoinColumn(name = "year_id", nullable = false)
     private Year year;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "semester_id")
+    // Semester
+    @ManyToOne
+    @JoinColumn(name = "semester_id", nullable = false)
     private Semester semester;
 
-    // Workload
-    @Column(name = "lec_per_week")
-    private Integer lecPerWeek;
+    // ⭐ REQUIRED FOR OPTAPLANNER (Fixes your error)
+    @ManyToOne
+    @JoinColumn(name = "teacher_id")
+    private Teacher teacher;
 
-    @Column(name = "tut_per_week")
-    private Integer tutPerWeek;
+    // Weekly structure
+    @Column(nullable = false)
+    private int lecPerWeek;
 
-    @Column(name = "lab_per_week")
-    private Integer labPerWeek;
+    @Column(nullable = false)
+    private int tutPerWeek;
 
-    @Column(name = "weekly_hours")
-    private Integer weeklyHours;
+    @Column(nullable = false)
+    private int labPerWeek;
 
-    // getters/setters
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-
-    public Subject getSubject() { return subject; }
-    public void setSubject(Subject subject) { this.subject = subject; }
-
-    public Department getDepartment() { return department; }
-    public void setDepartment(Department department) { this.department = department; }
-
-    public Year getYear() { return year; }
-    public void setYear(Year year) { this.year = year; }
-
-    public Semester getSemester() { return semester; }
-    public void setSemester(Semester semester) { this.semester = semester; }
-
-    public Integer getLecPerWeek() { return lecPerWeek; }
-    public void setLecPerWeek(Integer lecPerWeek) { this.lecPerWeek = lecPerWeek; }
-
-    public Integer getTutPerWeek() { return tutPerWeek; }
-    public void setTutPerWeek(Integer tutPerWeek) { this.tutPerWeek = tutPerWeek; }
-
-    public Integer getLabPerWeek() { return labPerWeek; }
-    public void setLabPerWeek(Integer labPerWeek) { this.labPerWeek = labPerWeek; }
-
-    public Integer getWeeklyHours() { return weeklyHours; }
-    public void setWeeklyHours(Integer weeklyHours) { this.weeklyHours = weeklyHours; }
+    @Column(nullable = false)
+    private int weeklyHours;
 }

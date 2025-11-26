@@ -1,41 +1,46 @@
 package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
-import lombok.Data;
-@Data
+import lombok.*;
 @Entity
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
 @Table(name = "subjects")
 public class Subject {
-
-    public enum SubjectCategory {
-        OPEN_ELECTIVE, PROGRAM_ELECTIVE, REGULAR
-    }
-
-    public enum SubjectType {
-        LAB, THEORY, TUTORIAL
-    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private int priority;
+    @Column(nullable = false)
+    private String name;
 
     @Column(nullable = false, unique = true)
     private String code;
 
-    private String name;
-
+    // REGULAR, HONORS, ELECTIVE
     @Enumerated(EnumType.STRING)
     private SubjectCategory category;
 
+    public enum SubjectCategory {
+        REGULAR,
+        HONORS,
+        ELECTIVE
+    }
+
+    // THEORY, LAB, TUTORIAL
     @Enumerated(EnumType.STRING)
-    @Column(name = "subject_type")
-    private SubjectType subjectType;     // maps to your DB enum
+    private SubjectType type;
 
-    @ManyToOne(optional = false)
-    @JoinColumn(name = "semester_id")
+    public enum SubjectType {
+        THEORY,
+        LAB,
+        TUTORIAL
+    }
+
+    @ManyToOne
+    @JoinColumn(name = "semester_id", nullable = false)
     private Semester semester;
-
-    // getters/setters
 }

@@ -8,7 +8,7 @@ import java.util.List;
 
 @Repository
 public interface CourseOfferingRepository extends JpaRepository<CourseOffering, Long> {
-    List<CourseOffering> findBySemesterId(Long semesterId);
+    List<CourseOffering> findBySemester_Id(Long semesterId);
     List<CourseOffering> findBySubjectId(Long subjectId);
     List<CourseOffering> findBySemester_IdAndSubject_Id(Long semesterId, Long subjectId);
 }

@@ -1,15 +1,22 @@
 package com.rspc.timetable.config;
 
-import com.rspc.timetable.optaplanner.TimetableConstraintProvider;
-import org.optaplanner.core.api.score.stream.ConstraintProvider;
+import org.optaplanner.core.api.solver.SolverManager;
+import org.optaplanner.core.api.solver.SolverFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import com.rspc.timetable.optaplanner.TimetableSolution;
 
 @Configuration
 public class OptaPlannerConfig {
 
     @Bean
-    public ConstraintProvider constraintProvider() {
-        return new TimetableConstraintProvider();
+    public SolverFactory<TimetableSolution> solverFactory() {
+        return SolverFactory.createFromXmlResource("solver/solverConfig.xml");
+    }
+
+    @Bean
+    public SolverManager<TimetableSolution, Long> solverManager(
+            SolverFactory<TimetableSolution> solverFactory) {
+        return SolverManager.create(solverFactory);
     }
 }

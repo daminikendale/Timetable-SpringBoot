@@ -13,12 +13,12 @@ import java.util.Optional;
 @RestController
 @RequestMapping("/api/timetable")
 @CrossOrigin(origins = "http://localhost:5173")
-public class TimeTableController {
+public class TimetableController {
 
     private final TimetableGeneratorService generatorService;
     private final TimetableOptaPlannerService optaPlannerService;
 
-    public TimeTableController(TimetableGeneratorService generatorService,
+    public TimetableController(TimetableGeneratorService generatorService,
                                TimetableOptaPlannerService optaPlannerService) {
         this.generatorService = generatorService;
         this.optaPlannerService = optaPlannerService;

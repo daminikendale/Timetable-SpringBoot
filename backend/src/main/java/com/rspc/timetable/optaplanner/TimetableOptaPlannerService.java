@@ -1,80 +1,79 @@
 package com.rspc.timetable.optaplanner;
 
-import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
+import org.optaplanner.core.api.solver.Solver;
+import org.optaplanner.core.api.solver.SolverFactory;
 import org.optaplanner.core.api.solver.SolverJob;
 import org.optaplanner.core.api.solver.SolverManager;
 import org.optaplanner.core.api.solver.SolverStatus;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.function.Function;
+import java.util.concurrent.ConcurrentMap;
 
-@Slf4j
 @Service
+@RequiredArgsConstructor
 public class TimetableOptaPlannerService {
 
     private final SolverManager<TimetableSolution, Long> solverManager;
+    private final SolverFactory<TimetableSolution> solverFactory;
     private final TimetableProblemLoader problemLoader;
 
-    private final Map<Long, SolverJob<TimetableSolution, Long>> jobs = new ConcurrentHashMap<>();
+    // Store async solutions
+    private final ConcurrentMap<Long, TimetableSolution> solutionStore = new ConcurrentHashMap<>();
 
-    public TimetableOptaPlannerService(SolverManager<TimetableSolution, Long> solverManager,
-                                       TimetableProblemLoader problemLoader) {
-        this.solverManager = solverManager;
-        this.problemLoader = problemLoader;
+    /**
+     * -------------- 1. SYNCHRONOUS SOLVING (Controller /run/{id}) --------------
+     */
+    public TimetableSolution solve(TimetableSolution problem) {
+        Solver<TimetableSolution> solver = solverFactory.buildSolver();
+        return solver.solve(problem);
     }
 
+    /**
+     * -------------- 2. ASYNC SOLVER (Controller /solve/{id}) --------------
+     */
     public Long startSolving(Long semesterId) {
-        if (jobs.containsKey(semesterId)) {
-            log.info("Solver already running for semester {}", semesterId);
-            return semesterId;
-        }
-        Function<Long, TimetableSolution> problemFinder = problemLoader::loadProblemForSemester;
-        SolverJob<TimetableSolution, Long> job = solverManager.solveAndListen(
-            semesterId,
-            problemFinder,
-            solution -> log.info("New best solution for semester {} with score {}", semesterId, solution.getScore())
-        );
-        jobs.put(semesterId, job);
-        return semesterId;
+
+    solverManager.solve(
+            semesterId,                     // Problem ID
+            id -> loadProblem(id),          // Problem loader (Function<Long, TimetableSolution>)
+            solution -> solutionStore.put(semesterId, solution)  // Only receives solution
+    );
+
+    return semesterId;  // job ID
+}
+
+
+    private TimetableSolution loadProblem(Long semId) {
+        return problemLoader.loadProblemForSemester(semId);
     }
 
+    /**
+     * -------------- 3. CHECK STATUS --------------
+     */
     public String getStatus(Long semesterId) {
-        SolverJob<TimetableSolution, Long> job = jobs.get(semesterId);
-        if (job == null) {
-            return "NOT_SOLVING";
-        }
-        SolverStatus status = job.getSolverStatus();
-        return status == null ? "UNKNOWN" : status.name();
+        SolverStatus status = solverManager.getSolverStatus(semesterId);
+        return status == null ? "NOT_STARTED" : status.name();
     }
 
+    /**
+     * -------------- 4. GET FINAL RESULT --------------
+     */
     public Optional<TimetableSolution> getResult(Long semesterId) {
-        SolverJob<TimetableSolution, Long> job = jobs.get(semesterId);
-        if (job == null) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.ofNullable(job.getFinalBestSolution());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("Interrupted getting solution", e);
-            return Optional.empty();
-        } catch (ExecutionException e) {
-            log.error("Error getting solution", e);
-            return Optional.empty();
-        }
+        return Optional.ofNullable(solutionStore.get(semesterId));
     }
 
+    /**
+     * -------------- 5. TERMINATE --------------
+     */
     public boolean terminate(Long semesterId) {
-        SolverJob<TimetableSolution, Long> job = jobs.remove(semesterId);
-        if (job == null) {
+        try {
+            solverManager.terminateEarly(semesterId);
+            return true;
+        } catch (Exception e) {
             return false;
         }
-        job.terminateEarly();
-        log.info("Solver terminated for semester {}", semesterId);
-        return true;
     }
 }
