@@ -11,7 +11,7 @@ public class ScheduledClassDTO {
     private Long id;
     private String dayOfWeek;
 
-    private String timeSlot; // "HH:mm - HH:mm"
+    private String timeSlot;
     private String startTime;
     private String endTime;
 
@@ -26,8 +26,9 @@ public class ScheduledClassDTO {
     private String batchName;
 
     public ScheduledClassDTO(ScheduledClass sc) {
+
         this.id = sc.getId();
-        this.dayOfWeek = sc.getDayOfWeek().name();
+        this.dayOfWeek = sc.getDayOfWeek(); // FIXED
 
         if (sc.getTimeSlot() != null) {
             this.startTime = sc.getTimeSlot().getStartTime().toString();
@@ -42,8 +43,15 @@ public class ScheduledClassDTO {
 
         this.teacherName = (sc.getTeacher() != null) ? sc.getTeacher().getName() : null;
         this.classroomName = (sc.getClassroom() != null) ? sc.getClassroom().getName() : null;
-        this.divisionName = (sc.getDivision() != null) ? sc.getDivision().getDivisionName() : null;
+
+        this.divisionName = (sc.getDivision() != null)
+                ? sc.getDivision().getDivisionName()
+                : null;
+
         this.sessionType = sc.getSessionType();
-        this.batchName = (sc.getBatch() != null) ? sc.getBatch().getBatchName() : null;
+
+        this.batchName = (sc.getBatch() != null)
+                ? sc.getBatch().getBatchName()
+                : null;
     }
 }

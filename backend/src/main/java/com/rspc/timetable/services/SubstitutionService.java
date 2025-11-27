@@ -27,13 +27,15 @@ public class SubstitutionService {
             Long endTimeSlotId
     ) {
 
-        // Fetch all classes for that teacher
+        // fetch all classes by teacher
         List<ScheduledClass> dailyClasses =
                 scheduledClassRepository.findByTeacher_Id(absentTeacherId);
 
-        // Filter classes only on same day + timeslot range
+        String dayString = date.getDayOfWeek().name(); // convert enum → String
+
+        // filter only classes on same day + within requested timeslot range
         List<ScheduledClass> classesToCover = dailyClasses.stream()
-                .filter(sc -> sc.getDayOfWeek() == date.getDayOfWeek())
+                .filter(sc -> sc.getDayOfWeek().equals(dayString)) // FIXED
                 .filter(sc -> {
                     Long tsId = sc.getTimeSlot().getId();
                     return tsId >= startTimeSlotId && tsId <= endTimeSlotId;
@@ -44,12 +46,13 @@ public class SubstitutionService {
 
         for (ScheduledClass classToCover : classesToCover) {
 
-            // Teachers who can teach this subject
+            // find qualified substitute teachers
             List<Teacher> qualifiedSubs =
-                    teacherSubjectAllocationRepository.findAllBySubject(classToCover.getSubject())
+                    teacherSubjectAllocationRepository
+                            .findAllBySubject(classToCover.getSubject())
                             .stream()
                             .map(TeacherSubjectAllocation::getTeacher)
-                            .filter(t -> !t.getId().equals(absentTeacherId))   // remove absent teacher
+                            .filter(t -> !t.getId().equals(absentTeacherId))
                             .collect(Collectors.toList());
 
             Teacher chosen = null;
@@ -57,11 +60,13 @@ public class SubstitutionService {
             for (Teacher t : qualifiedSubs) {
 
                 boolean freePermanent =
-                        scheduledClassRepository.findByTeacher_IdAndDayOfWeekAndTimeSlot_Id(
-                                t.getId(),
-                                classToCover.getDayOfWeek(),
-                                classToCover.getTimeSlot().getId()
-                        ).isEmpty();
+                        scheduledClassRepository
+                                .findByTeacher_IdAndDayOfWeekAndTimeSlot_Id(
+                                        t.getId(),
+                                        dayString, // FIXED
+                                        classToCover.getTimeSlot().getId()
+                                )
+                                .isEmpty();
 
                 boolean freeTemporary =
                         substitutionRepository

@@ -6,9 +6,9 @@ import java.util.List;
 
 public interface BatchRepository extends JpaRepository<Batch, Long> {
 
-    // preferred: matches Batch.entity -> private Division division;
+    List<Batch> findByDivisionId(Long divisionId); 
+    // OR you can use:
+    // List<Batch> findByDivision_Id(Long divisionId);
     List<Batch> findByDivision_Id(Long divisionId);
 
-    // If you really prefer findByDivisionId(...) you could add an alias:
-    // List<Batch> findByDivisionId(Long divisionId);
 }

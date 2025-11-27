@@ -6,69 +6,71 @@ import jakarta.persistence.*;
 @Table(name = "course_offerings")
 public class CourseOffering {
 
-     @Id
+    @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private Integer lecPerWeek;
-    private Integer tutPerWeek;
-    private Integer labPerWeek;
+    @Column(name = "weekly_hours", nullable = false)
     private Integer weeklyHours;
-    private Integer totalHours;
 
     @ManyToOne
-    @JoinColumn(name = "semester_id")
+    @JoinColumn(name = "semester_id", nullable = false)
     private Semester semester;
 
     @ManyToOne
-    @JoinColumn(name = "subject_id")
+    @JoinColumn(name = "subject_id", nullable = false)
     private Subject subject;
+
+    @Column(name = "session_type")
+    private String sessionType;
+
+    @Column(name = "lab_per_week", nullable = false)
+    private Integer labPerWeek;
+
+    @Column(name = "lec_per_week", nullable = false)
+    private Integer lecPerWeek;
+
+    @Column(name = "tut_per_week", nullable = false)
+    private Integer tutPerWeek;
 
     @ManyToOne
     @JoinColumn(name = "department_id")
-    private Department department;
+    private Department department; // nullable per DESCRIBE
 
     @ManyToOne
-    @JoinColumn(name = "year_id")
-    private Year year;
+@JoinColumn(name = "year_id", nullable = false)
+private Year year;
 
-    private String sessionType;
+    public CourseOffering() { }
 
-    // existing getters/setters...
-
-    public Department getDepartment() {
-        return department;
-    }
-    public void setDepartment(Department department) {
-        this.department = department;
-    }
-
-    public Year getYear() {
-        return year;
-    }
-    public void setYear(Year year) {
-        this.year = year;
-    }
-
-    // getters + setters
     public Long getId() { return id; }
-
-    public Integer getLecPerWeek() { return lecPerWeek; }
-    public Integer getTutPerWeek() { return tutPerWeek; }
-    public Integer getLabPerWeek() { return labPerWeek; }
+    public void setId(Long id) { this.id = id; }
 
     public Integer getWeeklyHours() { return weeklyHours; }
-    public Integer getTotalHours() { return totalHours; }
+    public void setWeeklyHours(Integer weeklyHours) { this.weeklyHours = weeklyHours; }
 
     public Semester getSemester() { return semester; }
-    public Subject getSubject() { return subject; }
-
-    public void setId(Long id) { this.id = id; }
-    public void setLecPerWeek(Integer lecPerWeek) { this.lecPerWeek = lecPerWeek; }
-    public void setTutPerWeek(Integer tutPerWeek) { this.tutPerWeek = tutPerWeek; }
-    public void setLabPerWeek(Integer labPerWeek) { this.labPerWeek = labPerWeek; }
-    public void setWeeklyHours(Integer weeklyHours) { this.weeklyHours = weeklyHours; }
-    public void setTotalHours(Integer totalHours) { this.totalHours = totalHours; }
     public void setSemester(Semester semester) { this.semester = semester; }
+
+    public Subject getSubject() { return subject; }
     public void setSubject(Subject subject) { this.subject = subject; }
+
+    public String getSessionType() { return sessionType; }
+    public void setSessionType(String sessionType) { this.sessionType = sessionType; }
+
+    public Integer getLabPerWeek() { return labPerWeek; }
+    public void setLabPerWeek(Integer labPerWeek) { this.labPerWeek = labPerWeek; }
+
+    public Integer getLecPerWeek() { return lecPerWeek; }
+    public void setLecPerWeek(Integer lecPerWeek) { this.lecPerWeek = lecPerWeek; }
+
+    public Integer getTutPerWeek() { return tutPerWeek; }
+    public void setTutPerWeek(Integer tutPerWeek) { this.tutPerWeek = tutPerWeek; }
+
+    public Department getDepartment() { return department; }
+    public void setDepartment(Department department) { this.department = department; }
+
+   public Year getYear() { return year; }
+public void setYear(Year year) { this.year = year; }
+
 }
