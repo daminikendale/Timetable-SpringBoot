@@ -22,8 +22,9 @@ public class ScheduledClass {
     @JoinColumn(name = "division_id", nullable = false)
     private Division division;
 
+    // String intentionally (stores DayOfWeek.name())
     @Column(name = "day_of_week", nullable = false)
-    private String dayOfWeek;   // <-- STRING, not ENUM
+    private String dayOfWeek;
 
     @Column(name = "session_type", nullable = false)
     private String sessionType;

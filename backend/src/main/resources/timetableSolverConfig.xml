@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<solver>
+    <!-- ========================================================= -->
+    <!--  MODEL CLASSES                                            -->
+    <!-- ========================================================= -->
+
+    <solutionClass>com.rspc.timetable.optaplanner.TimetableSolution</solutionClass>
+
+    <entityClass>com.rspc.timetable.optaplanner.PlannedClass</entityClass>
+
+    <!-- ========================================================= -->
+    <!--  CONSTRAINT PROVIDER                                      -->
+    <!-- ========================================================= -->
+
+    <scoreDirectorFactory>
+        <constraintProviderClass>
+            com.rspc.timetable.optaplanner.TimetableConstraintProvider
+        </constraintProviderClass>
+    </scoreDirectorFactory>
+
+    <!-- ========================================================= -->
+    <!--  TERMINATION CONDITIONS                                   -->
+    <!-- ========================================================= -->
+    <termination>
+        <secondsSpentLimit>8</secondsSpentLimit>
+    </termination>
+</solver>

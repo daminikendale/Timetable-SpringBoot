@@ -36,7 +36,7 @@ public class BatchService {
 
     @Transactional(readOnly = true)
     public List<BatchDTO> byDivision(Long divisionId) {
-        return batchRepo.findByDivisionId(divisionId)
+        return batchRepo.findByDivision_Id(divisionId)
                 .stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());

@@ -1,18 +1,10 @@
 package com.rspc.timetable.optaplanner;
 
 import com.rspc.timetable.entities.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 import org.optaplanner.core.api.domain.entity.PlanningEntity;
-import org.optaplanner.core.api.domain.variable.PlanningVariable;
 import org.optaplanner.core.api.domain.lookup.PlanningId;
+import org.optaplanner.core.api.domain.variable.PlanningVariable;
 
-import java.util.List;
-
-@Getter
-@Setter
-@NoArgsConstructor
 @PlanningEntity
 public class PlannedClass {
 
@@ -22,34 +14,58 @@ public class PlannedClass {
     private CourseOffering offering;
     private Subject subject;
     private Division division;
-    private Batch batch;
-    private String sessionType;
+    private Batch batch;          // NULL for lectures
+    private String sessionType;   // LECTURE / LAB / TUTORIAL
+    private Integer hours;
 
-    private boolean fixed;
-    private int hours;
-
-    private List<Teacher> eligibleTeachers;
-
-    @PlanningVariable(valueRangeProviderRefs = "roomRange")
-    private Classroom room;
-
-    @PlanningVariable(valueRangeProviderRefs = "timeRange")
+    // Planning variables
+    @PlanningVariable(valueRangeProviderRefs = {"timeSlotRange"})
     private TimeSlot timeSlot;
 
-    @PlanningVariable(valueRangeProviderRefs = "teacherRange")
+    @PlanningVariable(valueRangeProviderRefs = {"roomRange"})
+    private Classroom room;
+
+    // NOT A PLANNING VARIABLE → assigned before solving
     private Teacher teacher;
 
-    private Integer day;
+    public PlannedClass() {}
 
-    public PlannedClass(Long id, CourseOffering offering, Subject subject, Division division,
-                        Batch batch, String sessionType, boolean fixed, int hours) {
-        this.id = id;
-        this.offering = offering;
-        this.subject = subject;
-        this.division = division;
-        this.batch = batch;
-        this.sessionType = sessionType;
-        this.fixed = fixed;
-        this.hours = hours;
-    }
+    // ---------------------------
+    // Getters and Setters
+    // ---------------------------
+
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+
+    public CourseOffering getOffering() { return offering; }
+    public void setOffering(CourseOffering offering) { this.offering = offering; }
+
+    public Subject getSubject() { return subject; }
+    public void setSubject(Subject subject) { this.subject = subject; }
+
+    public Division getDivision() { return division; }
+    public void setDivision(Division division) { this.division = division; }
+
+    public Batch getBatch() { return batch; }
+    public void setBatch(Batch batch) { this.batch = batch; }
+
+    public String getSessionType() { return sessionType; }
+    public void setSessionType(String sessionType) { this.sessionType = sessionType; }
+
+    public Integer getHours() { return hours; }
+    public void setHours(Integer hours) { this.hours = hours; }
+
+    public TimeSlot getTimeSlot() { return timeSlot; }
+    public void setTimeSlot(TimeSlot timeSlot) { this.timeSlot = timeSlot; }
+
+    public Classroom getRoom() { return room; }
+    public void setRoom(Classroom room) { this.room = room; }
+
+    public Teacher getTeacher() { return teacher; }
+    public void setTeacher(Teacher teacher) { this.teacher = teacher; }
+
+    // convenience
+    public boolean isLecture() { return "LECTURE".equalsIgnoreCase(sessionType); }
+    public boolean isTutorial() { return "TUTORIAL".equalsIgnoreCase(sessionType); }
+    public boolean isLab() { return "LAB".equalsIgnoreCase(sessionType); }
 }
