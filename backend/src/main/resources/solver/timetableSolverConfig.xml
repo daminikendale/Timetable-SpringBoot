@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<solver>
+    <solutionClass>com.rspc.timetable.optaplanner.TimetableSolution</solutionClass>
+    <entityClass>com.rspc.timetable.optaplanner.PlannedClass</entityClass>
+
+    <scoreDirectorFactory>
+        <constraintProviderClass>
+            com.rspc.timetable.optaplanner.TimetableConstraintProvider
+        </constraintProviderClass>
+    </scoreDirectorFactory>
+
+    <termination>
+        <secondsSpentLimit>20</secondsSpentLimit>
+    </termination>
+</solver>

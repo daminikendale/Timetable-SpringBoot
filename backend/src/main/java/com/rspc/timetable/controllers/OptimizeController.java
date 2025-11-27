@@ -1,44 +1,40 @@
 package com.rspc.timetable.controllers;
 
+import com.rspc.timetable.dto.SolveResultDTO;
 import com.rspc.timetable.optaplanner.TimetableOptaPlannerService;
 import com.rspc.timetable.optaplanner.TimetableSolution;
-import com.rspc.timetable.services.TimeTableProblemService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Optional;
-
 @RestController
-@RequestMapping("/api/optimize")
-@CrossOrigin(origins = "*")
+@RequestMapping("/optimize")
 @RequiredArgsConstructor
 public class OptimizeController {
 
-    private final TimeTableProblemService problemService;
-    private final TimetableOptaPlannerService solverService;
+    private final TimetableOptaPlannerService service;
 
-    @PostMapping("/run/{semesterId}")
-    public ResponseEntity<?> run(@PathVariable Long semesterId) {
+    @PostMapping("/solve/{semesterId}")
+    public ResponseEntity<?> solveSync(@PathVariable Long semesterId) {
+        return ResponseEntity.ok(service.solveForSemester(semesterId));
+    }
 
-        Long jobId = solverService.startSolving(semesterId);
+    @PostMapping("/async/{semesterId}")
+    public ResponseEntity<?> solveAsync(@PathVariable Long semesterId) {
+        return ResponseEntity.ok(service.startSolving(semesterId));
+    }
 
-        Optional<TimetableSolution> result;
-        int attempts = 0;
+    @GetMapping("/status/{semesterId}")
+    public ResponseEntity<?> status(@PathVariable Long semesterId) {
+        return ResponseEntity.ok(service.getStatus(semesterId));
+    }
 
-        do {
-            try { Thread.sleep(500); } catch (Exception ignored) {}
-            result = solverService.getResult(semesterId);
-            attempts++;
-        } while (result.isEmpty() && attempts < 20);
+    @GetMapping("/result/{semesterId}")
+    public ResponseEntity<?> result(@PathVariable Long semesterId) {
+        return ResponseEntity.ok(service.getResult(semesterId));
+    }
 
-        if (result.isEmpty()) {
-            return ResponseEntity.accepted().body("Solver still running... jobId = " + jobId);
-        }
-
-        TimetableSolution solved = result.get();
-        problemService.saveSolution(solved, semesterId);
-
-        return ResponseEntity.ok(solved);
+    @PostMapping("/terminate/{semesterId}")
+    public ResponseEntity<?> stop(@PathVariable Long semesterId) {
+        return ResponseEntity.ok(service.terminate(semesterId));
     }
 }

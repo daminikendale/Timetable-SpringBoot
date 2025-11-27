@@ -2,6 +2,7 @@ package com.rspc.timetable.optaplanner;
 
 import com.rspc.timetable.entities.*;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.optaplanner.core.api.domain.solution.PlanningEntityCollectionProperty;
 import org.optaplanner.core.api.domain.solution.PlanningScore;
@@ -10,55 +11,31 @@ import org.optaplanner.core.api.domain.solution.ProblemFactCollectionProperty;
 import org.optaplanner.core.api.domain.valuerange.ValueRangeProvider;
 import org.optaplanner.core.api.score.buildin.hardsoft.HardSoftScore;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @Getter
 @Setter
+@NoArgsConstructor
 @PlanningSolution
 public class TimetableSolution {
 
-    /* ------------------- FACT RANGES ------------------- */
-
+    @ValueRangeProvider(id = "roomRange")
     @ProblemFactCollectionProperty
-    @ValueRangeProvider(id = "timeSlots")
-    private List<TimeSlot> timeSlotList = new ArrayList<>();
+    private List<Classroom> roomList;
 
+    @ValueRangeProvider(id = "timeRange")
     @ProblemFactCollectionProperty
-    @ValueRangeProvider(id = "rooms")
-    private List<Classroom> roomList = new ArrayList<>();
+    private List<TimeSlot> timeSlotList;
 
-    // IMPORTANT: teacherList must be a problem fact and provide "teacherRange"
-    @ProblemFactCollectionProperty
     @ValueRangeProvider(id = "teacherRange")
-    private List<Teacher> teacherList = new ArrayList<>();
+    @ProblemFactCollectionProperty
+    private List<Teacher> teacherList;
 
     @ProblemFactCollectionProperty
-    private List<Division> divisionList = new ArrayList<>();
-
-    @ProblemFactCollectionProperty
-    private List<Batch> batchList = new ArrayList<>();
-
-    @ProblemFactCollectionProperty
-    private List<CourseOffering> offeringList = new ArrayList<>();
-
-    /* ------------------- DAY RANGE ------------------- */
-    @ValueRangeProvider(id = "dayRange")
-    @ProblemFactCollectionProperty
-    private List<Integer> dayRangeList = defaultDayRange(5);
-
-    public static List<Integer> defaultDayRange(int days) {
-        List<Integer> r = new ArrayList<>();
-        for (int i = 0; i < days; i++) r.add(i);
-        return r;
-    }
-
-    /* ------------------- PLANNING ENTITIES ------------------- */
+    private List<CourseOffering> offeringList;
 
     @PlanningEntityCollectionProperty
-    private List<PlannedClass> plannedClassList = new ArrayList<>();
-
-    /* ------------------- SCORE ------------------- */
+    private List<PlannedClass> plannedClassList;
 
     @PlanningScore
     private HardSoftScore score;

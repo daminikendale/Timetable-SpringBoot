@@ -28,10 +28,10 @@ public class DivisionService {
                 .collect(Collectors.toList());
     }
 
-    // ✅ NEW METHOD: Get divisions by year ID
+    // Currently Division has no Year field, so this just returns all divisions
     @Transactional(readOnly = true)
     public List<DivisionDTO> getDivisionsByYearId(Long yearId) {
-        return divisionRepository.findByYearId(yearId).stream()
+        return divisionRepository.findAll().stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }

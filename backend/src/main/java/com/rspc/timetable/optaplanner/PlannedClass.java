@@ -6,9 +6,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.optaplanner.core.api.domain.entity.PlanningEntity;
 import org.optaplanner.core.api.domain.variable.PlanningVariable;
-import org.optaplanner.core.api.domain.valuerange.ValueRangeProvider;
+import org.optaplanner.core.api.domain.lookup.PlanningId;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @Getter
@@ -17,6 +16,7 @@ import java.util.List;
 @PlanningEntity
 public class PlannedClass {
 
+    @PlanningId
     private Long id;
 
     private CourseOffering offering;
@@ -25,47 +25,31 @@ public class PlannedClass {
     private Batch batch;
     private String sessionType;
 
-    // The solver will choose a teacher. We provide two value ranges:
-    // "eligibleTeacherRange" (per-class) and "teacherRange" (global from solution).
-    @PlanningVariable(valueRangeProviderRefs = { "eligibleTeacherRange", "teacherRange" })
-    private Teacher teacher;
+    private boolean fixed;
+    private int hours;
 
-    @PlanningVariable(valueRangeProviderRefs = "dayRange")
-    private Integer day;
+    private List<Teacher> eligibleTeachers;
 
-    @PlanningVariable(valueRangeProviderRefs = "timeSlots")
-    private TimeSlot timeSlot;
-
-    @PlanningVariable(valueRangeProviderRefs = "rooms")
+    @PlanningVariable(valueRangeProviderRefs = "roomRange")
     private Classroom room;
 
-    // Multi slot support (for labs)
-    private boolean multiSlot;
-    private int slotCount = 1;
+    @PlanningVariable(valueRangeProviderRefs = "timeRange")
+    private TimeSlot timeSlot;
 
-    // Per-class eligible teachers (populated at problem load time)
-    private List<Teacher> eligibleTeachers = new ArrayList<>();
+    @PlanningVariable(valueRangeProviderRefs = "teacherRange")
+    private Teacher teacher;
 
-    @ValueRangeProvider(id = "eligibleTeacherRange")
-    public List<Teacher> provideEligibleTeacherRange() {
-        return eligibleTeachers == null ? new ArrayList<>() : eligibleTeachers;
-    }
+    private Integer day;
 
-    public PlannedClass(Long id,
-                        CourseOffering offering,
-                        Subject subject,
-                        Division division,
-                        Batch batch,
-                        String sessionType,
-                        boolean multiSlot,
-                        int slotCount) {
+    public PlannedClass(Long id, CourseOffering offering, Subject subject, Division division,
+                        Batch batch, String sessionType, boolean fixed, int hours) {
         this.id = id;
         this.offering = offering;
         this.subject = subject;
         this.division = division;
         this.batch = batch;
         this.sessionType = sessionType;
-        this.multiSlot = multiSlot;
-        this.slotCount = slotCount;
+        this.fixed = fixed;
+        this.hours = hours;
     }
 }

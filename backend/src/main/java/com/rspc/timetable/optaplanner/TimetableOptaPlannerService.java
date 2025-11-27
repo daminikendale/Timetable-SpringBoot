@@ -2,8 +2,9 @@ package com.rspc.timetable.optaplanner;
 
 import com.rspc.timetable.services.TimeTableProblemService;
 import lombok.extern.slf4j.Slf4j;
+import org.optaplanner.core.api.solver.Solver;
+import org.optaplanner.core.api.solver.SolverFactory;
 import org.optaplanner.core.api.solver.SolverManager;
-import org.optaplanner.core.api.solver.SolverStatus;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -15,63 +16,54 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TimetableOptaPlannerService {
 
     private final SolverManager<TimetableSolution, Long> solverManager;
-    private final TimetableProblemLoader problemLoader;
-    private final TimeTableProblemService problemService;  // ✅ FIXED: injected
-
+    private final TimeTableProblemService problemService;
     private final Map<Long, TimetableSolution> resultMap = new ConcurrentHashMap<>();
-    private final Map<Long, String> statusMap = new ConcurrentHashMap<>();
 
     public TimetableOptaPlannerService(
             SolverManager<TimetableSolution, Long> solverManager,
-            TimetableProblemLoader problemLoader,
-            TimeTableProblemService problemService   // <-- FIXED
+            TimeTableProblemService problemService
     ) {
         this.solverManager = solverManager;
-        this.problemLoader = problemLoader;
         this.problemService = problemService;
     }
 
+    // ----------- SYNC SOLVING --------------
+    public TimetableSolution solveForSemester(Long semesterId) {
+        TimetableSolution unsolved = problemService.load(semesterId);
+
+        SolverFactory<TimetableSolution> solverFactory =
+                SolverFactory.createFromXmlResource("solver/timetableSolverConfig.xml");
+        Solver<TimetableSolution> solver = solverFactory.buildSolver();
+
+        TimetableSolution solved = solver.solve(unsolved);
+        problemService.saveSolution(solved, semesterId);
+        return solved;
+    }
+
+    // ----------- ASYNC SOLVING --------------
     public Long startSolving(Long semesterId) {
+        TimetableSolution problem = problemService.load(semesterId);
 
-        statusMap.put(semesterId, "SOLVING");
-
-        TimetableSolution problem = problemLoader.loadProblemForSemester(semesterId);
-
-        solverManager.solve(
-                semesterId,
-                problem,
-                solvedSolution -> {
-                    log.info("Solver finished for semester {}", semesterId);
-
-                    resultMap.put(semesterId, solvedSolution);
-                    statusMap.put(semesterId, "COMPLETED");
-
-                    // SAVE TO DATABASE
-                    problemService.saveSolution(solvedSolution, semesterId);
-                }
-        );
-
+        solverManager.solve(semesterId, problem, finalBest -> {
+            resultMap.put(semesterId, finalBest);
+            problemService.saveSolution(finalBest, semesterId);
+        });
         return semesterId;
     }
 
+    // ----------- STATUS --------------
     public String getStatus(Long semesterId) {
-        SolverStatus status = solverManager.getSolverStatus(semesterId);
-        if (status == SolverStatus.NOT_SOLVING) {
-            return statusMap.getOrDefault(semesterId, "NOT_SOLVING");
-        }
-        return status.toString();
+        return solverManager.getSolverStatus(semesterId).name();
     }
 
+    // ----------- GET RESULT --------------
     public Optional<TimetableSolution> getResult(Long semesterId) {
         return Optional.ofNullable(resultMap.get(semesterId));
     }
 
+    // ----------- STOP --------------
     public boolean terminate(Long semesterId) {
-        SolverStatus status = solverManager.getSolverStatus(semesterId);
-        if (status == SolverStatus.NOT_SOLVING) return false;
-
         solverManager.terminateEarly(semesterId);
-        statusMap.put(semesterId, "TERMINATED");
         return true;
     }
 }
