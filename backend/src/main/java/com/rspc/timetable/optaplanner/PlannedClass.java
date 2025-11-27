@@ -69,3 +69,4 @@ public class PlannedClass {
     public boolean isTutorial() { return "TUTORIAL".equalsIgnoreCase(sessionType); }
     public boolean isLab() { return "LAB".equalsIgnoreCase(sessionType); }
 }
+//comment 
