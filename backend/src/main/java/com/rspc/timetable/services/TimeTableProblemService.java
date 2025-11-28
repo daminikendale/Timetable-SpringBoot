@@ -4,257 +4,156 @@ import com.rspc.timetable.entities.*;
 import com.rspc.timetable.optaplanner.PlannedClass;
 import com.rspc.timetable.optaplanner.TimetableSolution;
 import com.rspc.timetable.repositories.*;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class TimeTableProblemService {
 
-    private final CourseOfferingRepository courseOfferingRepository;
-    private final DivisionRepository divisionRepository;
+    private final ScheduledClassRepository scheduledClassRepository;
     private final ClassroomRepository classroomRepository;
     private final TimeSlotRepository timeSlotRepository;
     private final TeacherRepository teacherRepository;
-    private final TeacherSubjectAllocationRepository teacherSubjectAllocationRepository;
-    private final ScheduledClassRepository scheduledClassRepository;
-    private final BatchRepository batchRepository;
-    private final LectureTeacherAssignmentRepository lectureTeacherAssignmentRepository;
-    private final BatchTeacherAssignmentRepository batchTeacherAssignmentRepository;
+    private final TeacherSubjectAllocationRepository allocationRepository;
+    private final SemesterDivisionRepository semesterDivisionRepository;
+    private final DivisionRepository divisionRepository;
+    private final ScheduledClassRepository scRepo;
 
-    public TimeTableProblemService(
-            CourseOfferingRepository courseOfferingRepository,
-            DivisionRepository divisionRepository,
-            ClassroomRepository classroomRepository,
-            TimeSlotRepository timeSlotRepository,
-            TeacherRepository teacherRepository,
-            TeacherSubjectAllocationRepository teacherSubjectAllocationRepository,
-            ScheduledClassRepository scheduledClassRepository,
-            BatchRepository batchRepository,
-            LectureTeacherAssignmentRepository lectureTeacherAssignmentRepository,
-            BatchTeacherAssignmentRepository batchTeacherAssignmentRepository
-    ) {
-        this.courseOfferingRepository = courseOfferingRepository;
-        this.divisionRepository = divisionRepository;
-        this.classroomRepository = classroomRepository;
-        this.timeSlotRepository = timeSlotRepository;
-        this.teacherRepository = teacherRepository;
-        this.teacherSubjectAllocationRepository = teacherSubjectAllocationRepository;
-        this.scheduledClassRepository = scheduledClassRepository;
-        this.batchRepository = batchRepository;
-        this.lectureTeacherAssignmentRepository = lectureTeacherAssignmentRepository;
-        this.batchTeacherAssignmentRepository = batchTeacherAssignmentRepository;
-    }
-
+    /**
+     * Load problem into TimetableSolution for solver
+     */
+    @Transactional(readOnly = true)
     public TimetableSolution load(Long semesterId) {
-        TimetableSolution solution = new TimetableSolution();
+        log.info("Loading problem for semester {}", semesterId);
 
-        List<Classroom> roomList = safeList(classroomRepository.findAll());
-        List<TimeSlot> timeSlotList = safeList(timeSlotRepository.findAll());
-        List<Teacher> teacherList = safeList(teacherRepository.findAll());
+        // divisions via semester_division mapping (assumes SemesterDivision has getDivision())
+        List<Division> divisions = semesterDivisionRepository.findBySemester_IdOrderByDivision_Id(semesterId)
+                .stream().map(sd -> sd.getDivision()).collect(Collectors.toList());
 
-        solution.setRoomList(roomList);
-        solution.setTimeSlotList(timeSlotList);
-        solution.setTeacherList(teacherList);
+        List<Classroom> rooms = classroomRepository.findAll();
+        List<TimeSlot> timeSlots = timeSlotRepository.findAllByOrderByStartTimeAsc();
+        List<Teacher> teachers = teacherRepository.findAll();
 
-        // offerings for this semester
-        List<CourseOffering> offeringList = safeList(courseOfferingRepository.findAll()).stream()
-                .filter(co -> co != null
-                        && co.getSemester() != null
-                        && co.getSemester().getId() != null
-                        && Objects.equals(co.getSemester().getId(), semesterId))
+        // build planned classes from scheduled_classes for these divisions (if existing)
+        List<ScheduledClass> scheduledForSemester = scheduledClassRepository.findAll()
+                .stream()
+                .filter(sc -> sc.getDivision() != null && divisions.contains(sc.getDivision()))
                 .collect(Collectors.toList());
-        // build planned classes
-        List<Division> divisionList = safeList(divisionRepository.findAll());
 
-        // teacher allocations (used only to build eligible teachers mapping; not the final teacher)
-        List<TeacherSubjectAllocation> allAllocations = safeList(teacherSubjectAllocationRepository.findAll());
+        // build subject->teacher map (priority)
+        Map<Long, Teacher> subjectTeacherMap = buildSubjectTeacherMap();
 
-        Map<Long, List<Teacher>> subjectToTeachers = new HashMap<>();
-        for (CourseOffering offering : offeringList) {
-            if (offering == null || offering.getSubject() == null || offering.getSubject().getId() == null) continue;
-            Long subjectId = offering.getSubject().getId();
-            List<Long> teacherIds = allAllocations.stream()
-                    .filter(a -> a != null && a.getSubject() != null && a.getSubject().getId() != null && Objects.equals(a.getSubject().getId(), subjectId))
-                    .map(a -> a.getTeacher() != null ? a.getTeacher().getId() : null)
-                    .filter(Objects::nonNull)
-                    .distinct()
-                    .collect(Collectors.toList());
-            List<Teacher> eligible = teacherList.stream()
-                    .filter(t -> t != null && t.getId() != null && teacherIds.contains(t.getId()))
-                    .collect(Collectors.toList());
-            subjectToTeachers.put(subjectId, eligible);
-        }
+        List<PlannedClass> plannedClasses = new ArrayList<>();
+        for (ScheduledClass sc : scheduledForSemester) {
+            PlannedClass pc = new PlannedClass();
+            pc.setId(sc.getId());
+            pc.setOffering(sc.getCourseOffering());
+            pc.setSubject(sc.getSubject());
+            pc.setDivision(sc.getDivision());
+            pc.setBatch(sc.getBatch());
+            pc.setSessionType(sc.getSessionType());
+            pc.setHours(sc.getCourseOffering() != null ? sc.getCourseOffering().getWeeklyHours() : 1);
 
-        List<PlannedClass> plannedClassList = new ArrayList<>();
-        AtomicLong idGen = new AtomicLong(System.currentTimeMillis() % 1_000_000L);
-
-        for (CourseOffering offering : offeringList) {
-            if (offering == null) continue;
-            int lec = offering.getLecPerWeek() == null ? 0 : offering.getLecPerWeek();
-            int tut = offering.getTutPerWeek() == null ? 0 : offering.getTutPerWeek();
-            int lab = offering.getLabPerWeek() == null ? 0 : offering.getLabPerWeek();
-
-            for (Division division : divisionList) {
-                if (division == null) continue;
-                Long subjectId = offering.getSubject() != null ? offering.getSubject().getId() : null;
-                List<Teacher> eligibleTeachers = subjectToTeachers.getOrDefault(subjectId, Collections.emptyList());
-
-                // fetch batches for this division from DB
-                List<Batch> batchList = safeList(batchRepository.findByDivision_Id(division.getId()));
-
-                // LECTURES (division-wide)
-                for (int i = 0; i < lec; i++) {
-                    PlannedClass pc = new PlannedClass();
-                    pc.setId(idGen.incrementAndGet());
-                    pc.setOffering(offering);
-                    pc.setSubject(offering.getSubject());
-                    pc.setDivision(division);
-                    pc.setBatch(null);
-                    pc.setSessionType("LECTURE");
-                    pc.setHours(1);
-                    plannedClassList.add(pc);
-                }
-
-                // TUTORIALS
-                if (!batchList.isEmpty()) {
-                    for (int i = 0; i < tut; i++) {
-                        for (Batch batch : batchList) {
-                            PlannedClass pc = new PlannedClass();
-                            pc.setId(idGen.incrementAndGet());
-                            pc.setOffering(offering);
-                            pc.setSubject(offering.getSubject());
-                            pc.setDivision(division);
-                            pc.setBatch(batch);
-                            pc.setSessionType("TUTORIAL");
-                            pc.setHours(1);
-                            plannedClassList.add(pc);
-                        }
-                    }
-                } else {
-                    for (int i = 0; i < tut; i++) {
-                        PlannedClass pc = new PlannedClass();
-                        pc.setId(idGen.incrementAndGet());
-                        pc.setOffering(offering);
-                        pc.setSubject(offering.getSubject());
-                        pc.setDivision(division);
-                        pc.setBatch(null);
-                        pc.setSessionType("TUTORIAL");
-                        pc.setHours(1);
-                        plannedClassList.add(pc);
-                    }
-                }
-
-                // LABS
-                if (!batchList.isEmpty()) {
-                    for (int i = 0; i < lab; i++) {
-                        for (Batch batch : batchList) {
-                            PlannedClass pc = new PlannedClass();
-                            pc.setId(idGen.incrementAndGet());
-                            pc.setOffering(offering);
-                            pc.setSubject(offering.getSubject());
-                            pc.setDivision(division);
-                            pc.setBatch(batch);
-                            pc.setSessionType("LAB");
-                            pc.setHours(1);
-                            plannedClassList.add(pc);
-                        }
-                    }
-                } else {
-                    for (int i = 0; i < lab; i++) {
-                        PlannedClass pc = new PlannedClass();
-                        pc.setId(idGen.incrementAndGet());
-                        pc.setOffering(offering);
-                        pc.setSubject(offering.getSubject());
-                        pc.setDivision(division);
-                        pc.setBatch(null);
-                        pc.setSessionType("LAB");
-                        pc.setHours(1);
-                        plannedClassList.add(pc);
-                    }
-                }
+            // assign teacher from allocation map if exists, otherwise keep teacher from DB if present
+            Teacher t = sc.getTeacher();
+            if (t == null && sc.getSubject() != null) {
+                t = subjectTeacherMap.get(sc.getSubject().getId());
             }
+            pc.setTeacher(t);
+
+            // solver will set timeSlot + room (we keep existing if present)
+            pc.setTimeSlot(sc.getTimeSlot());
+            pc.setRoom(sc.getClassroom());
+
+            plannedClasses.add(pc);
         }
 
-        solution.setPlannedClassList(plannedClassList);
+        TimetableSolution solution = new TimetableSolution();
+        solution.setPlannedClassList(plannedClasses);
+        solution.setRoomList(rooms);
+        solution.setTimeSlotList(timeSlots);
+        solution.setTeacherList(teachers);
 
-        // load existing assignment entities into solution so ConstraintProvider can use them
-        List<LectureTeacherAssignment> lectureAssigns = safeList(lectureTeacherAssignmentRepository.findAll());
-        List<BatchTeacherAssignment> batchAssigns = safeList(batchTeacherAssignmentRepository.findAll());
-        solution.setLectureTeacherAssignments(lectureAssigns);
-        solution.setBatchTeacherAssignments(batchAssigns);
-
-        solution.setRoomList(roomList);
-        solution.setTimeSlotList(timeSlotList);
-        solution.setTeacherList(teacherList);
-
+        log.info("Load complete: {} planned classes, {} rooms, {} timeslots", plannedClasses.size(), rooms.size(), timeSlots.size());
         return solution;
     }
 
-    // Save scheduler result. Must be transactional to run deleteBySemesterId (a modifying query).
+    /**
+     * Save solved TimetableSolution back to DB as ScheduledClass rows.
+     * This replaces scheduled classes for the divisions involved.
+     */
     @Transactional
-    public void saveSolution(TimetableSolution solution, Long semesterId) {
-        // delete previous scheduled classes for semester
-        scheduledClassRepository.deleteBySemesterId(semesterId);
-
-        // helper maps for quick lookup
-        Map<String, Teacher> lectureAssignMap = new HashMap<>();
-        for (LectureTeacherAssignment lta : lectureTeacherAssignmentRepository.findAll()) {
-            if (lta.getDivision() != null && lta.getSubject() != null) {
-                lectureAssignMap.put(lta.getDivision().getId() + ":" + lta.getSubject().getId(), lta.getTeacher());
-            }
-        }
-        Map<String, Teacher> batchAssignMap = new HashMap<>();
-        for (BatchTeacherAssignment bta : batchTeacherAssignmentRepository.findAll()) {
-            if (bta.getBatch() != null && bta.getSubject() != null) {
-                batchAssignMap.put(bta.getBatch().getId() + ":" + bta.getSubject().getId(), bta.getTeacher());
-            }
+    public void saveSolution(TimetableSolution solved, Long semesterId) {
+        log.info("Saving solution for semester {}", semesterId);
+        List<PlannedClass> pcs = solved.getPlannedClassList();
+        if (pcs == null || pcs.isEmpty()) {
+            log.warn("No planned classes to save");
+            return;
         }
 
-        for (PlannedClass pc : solution.getPlannedClassList()) {
-            if (pc.getTimeSlot() == null || pc.getRoom() == null) continue;
+        // Collect divisions present
+        Set<Long> divisionIds = pcs.stream()
+                .map(pc -> pc.getDivision())
+                .filter(Objects::nonNull)
+                .map(Division::getId)
+                .collect(Collectors.toSet());
 
+        // delete existing scheduled classes for these divisions (careful with deleteByDivision_Id)
+        for (Long divId : divisionIds) {
+            scheduledClassRepository.deleteByDivision_Id(divId);
+        }
+
+        List<ScheduledClass> toSave = new ArrayList<>();
+        for (PlannedClass pc : pcs) {
+            // skip if unsolved (no timeslot or no room)
+            if (pc.getTimeSlot() == null || pc.getRoom() == null) {
+                continue;
+            }
             ScheduledClass sc = new ScheduledClass();
+            sc.setId(pc.getId());
             sc.setCourseOffering(pc.getOffering());
+            sc.setSubject(pc.getSubject());
             sc.setDivision(pc.getDivision());
             sc.setBatch(pc.getBatch());
-            sc.setClassroom(pc.getRoom());
-            sc.setTimeSlot(pc.getTimeSlot());
-            sc.setSubject(pc.getSubject());
             sc.setSessionType(pc.getSessionType());
-
-            // derive teacher:
-            Teacher assignedTeacher = null;
-            if (pc.isLecture()) {
-                // lecture -> lookup LectureTeacherAssignment by division+subject
-                assignedTeacher = lectureAssignMap.get(pc.getDivision().getId() + ":" + pc.getSubject().getId());
-            } else {
-                // tutorial/lab -> lookup BatchTeacherAssignment by batch+subject; if batch null, fallback to division-level or leave null
-                if (pc.getBatch() != null) {
-                    assignedTeacher = batchAssignMap.get(pc.getBatch().getId() + ":" + pc.getSubject().getId());
-                }
-                if (assignedTeacher == null) {
-                    assignedTeacher = lectureAssignMap.get(pc.getDivision().getId() + ":" + pc.getSubject().getId());
-                }
+            sc.setTimeSlot(pc.getTimeSlot());
+            sc.setClassroom(pc.getRoom());
+            if (pc.getTeacher() != null) {
+                sc.setTeacher(pc.getTeacher());
             }
-
-            if (assignedTeacher != null) sc.setTeacher(assignedTeacher);
-
-            // day of week store as string (from timeslot)
+            // store dayOfWeek as string (ScheduledClass.setDayOfWeek expects String)
             if (pc.getTimeSlot() != null && pc.getTimeSlot().getDayOfWeek() != null) {
                 sc.setDayOfWeek(pc.getTimeSlot().getDayOfWeek().name());
-            } else {
-                sc.setDayOfWeek(java.time.DayOfWeek.MONDAY.name());
             }
-
-            scheduledClassRepository.save(sc);
+            toSave.add(sc);
         }
+
+        scheduledClassRepository.saveAll(toSave);
+        log.info("Saved {} scheduled classes", toSave.size());
     }
 
-    private static <T> List<T> safeList(List<T> maybeNull) {
-        return maybeNull == null ? Collections.emptyList() : maybeNull;
+    private Map<Long, Teacher> buildSubjectTeacherMap() {
+        Map<Long, Teacher> map = new HashMap<>();
+        List<TeacherSubjectAllocation> allocations = allocationRepository.findAll();
+        // pick allocation with lowest priority value (1 best)
+        Map<Long, TeacherSubjectAllocation> best = new HashMap<>();
+        for (TeacherSubjectAllocation a : allocations) {
+            if (a.getSubject() == null || a.getTeacher() == null) continue;
+            Long sid = a.getSubject().getId();
+            if (!best.containsKey(sid) || a.getPriority() < best.get(sid).getPriority()) {
+                best.put(sid, a);
+            }
+        }
+        for (Map.Entry<Long, TeacherSubjectAllocation> e : best.entrySet()) {
+            map.put(e.getKey(), e.getValue().getTeacher());
+        }
+        return map;
     }
 }

@@ -12,7 +12,7 @@ public class OptaPlannerConfig {
 
     @Bean
     public SolverFactory<TimetableSolution> solverFactory() {
-        return SolverFactory.createFromXmlResource("timetableSolverConfig.xml");
+        return SolverFactory.createFromXmlResource("solverConfig.xml");
     }
 
     @Bean

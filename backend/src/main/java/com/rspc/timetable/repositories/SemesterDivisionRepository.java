@@ -18,4 +18,5 @@ public interface SemesterDivisionRepository extends JpaRepository<SemesterDivisi
     // You may also have other methods here, like:
     List<SemesterDivision> findBySemester_SemesterNumber(int semesterNumber);
     List<SemesterDivision> findBySemesterId(Long semesterId);
+     List<SemesterDivision> findBySemester_IdOrderByDivision_Id(Long semesterId);
 }
