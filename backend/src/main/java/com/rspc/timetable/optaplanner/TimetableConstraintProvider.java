@@ -1,55 +1,70 @@
 package com.rspc.timetable.optaplanner;
 
-import com.rspc.timetable.entities.*;
+import com.rspc.timetable.entities.ScheduledClass;
 import org.optaplanner.core.api.score.buildin.hardsoft.HardSoftScore;
-import org.optaplanner.core.api.score.stream.*;
+import org.optaplanner.core.api.score.stream.Constraint;
+import org.optaplanner.core.api.score.stream.ConstraintFactory;
+import org.optaplanner.core.api.score.stream.ConstraintProvider;
 
 public class TimetableConstraintProvider implements ConstraintProvider {
 
     @Override
     public Constraint[] defineConstraints(ConstraintFactory factory) {
-        return new Constraint[] {
+        return new Constraint[]{
                 roomConflict(factory),
-                teacherOverlap(factory),
-                lectureDivisionSubjectSameTeacher(factory)
+                teacherConflict(factory),
+                studentConflict(factory),
+                teacherContinuousHoursLimit(factory)
         };
     }
 
-    // two classes cannot be in the same room at same time (hard)
+    // -----------------------------------------
+    // Hard Constraints
+    // -----------------------------------------
+
+    // 1. ROOM CONFLICT
     private Constraint roomConflict(ConstraintFactory factory) {
-        return factory.forEach(PlannedClass.class)
-                .filter(pc -> pc.getRoom() != null && pc.getTimeSlot() != null)
-                .join(PlannedClass.class,
-                        Joiners.equal(PlannedClass::getRoom),
-                        Joiners.equal(PlannedClass::getTimeSlot),
-                        Joiners.lessThan(PlannedClass::getId))
-                .penalize(HardSoftScore.ONE_HARD)
-                .asConstraint("Room conflict");
+        return factory.forEach(ScheduledClass.class)
+                .join(ScheduledClass.class,
+                        org.optaplanner.core.api.score.stream.Joiners.equal(ScheduledClass::getClassroom),
+                        org.optaplanner.core.api.score.stream.Joiners.equal(sc -> sc.getTimeSlot().getId()),
+                        org.optaplanner.core.api.score.stream.Joiners.lessThan(ScheduledClass::getId)
+                )
+                .penalize("Room conflict", HardSoftScore.ONE_HARD);
     }
 
-    // teacher cannot teach two classes at same time (hard)
-    private Constraint teacherOverlap(ConstraintFactory factory) {
-        return factory.forEach(PlannedClass.class)
-                .filter(pc -> pc.getTeacher() != null && pc.getTimeSlot() != null)
-                .join(PlannedClass.class,
-                        Joiners.equal(PlannedClass::getTeacher),
-                        Joiners.equal(PlannedClass::getTimeSlot),
-                        Joiners.lessThan(PlannedClass::getId))
-                .penalize(HardSoftScore.ONE_HARD)
-                .asConstraint("Teacher overlap");
+    // 2. TEACHER CONFLICT
+    private Constraint teacherConflict(ConstraintFactory factory) {
+        return factory.forEach(ScheduledClass.class)
+                .filter(sc -> sc.getTeacher() != null)
+                .join(ScheduledClass.class,
+                        org.optaplanner.core.api.score.stream.Joiners.equal(sc -> sc.getTeacher().getId()),
+                        org.optaplanner.core.api.score.stream.Joiners.equal(sc -> sc.getTimeSlot().getId()),
+                        org.optaplanner.core.api.score.stream.Joiners.lessThan(ScheduledClass::getId)
+                )
+                .penalize("Teacher conflict", HardSoftScore.ONE_HARD);
     }
 
-    // For a given division + subject, prefer same teacher for lectures (hard)
-    private Constraint lectureDivisionSubjectSameTeacher(ConstraintFactory factory) {
-        return factory.forEach(PlannedClass.class)
-                .filter(PlannedClass::isLecture)
-                .join(PlannedClass.class,
-                        Joiners.equal(PlannedClass::getDivision),
-                        Joiners.equal(PlannedClass::getSubject),
-                        Joiners.lessThan(PlannedClass::getId))
-                .filter((a, b) -> a.getTeacher() != null && b.getTeacher() != null
-                        && !a.getTeacher().getId().equals(b.getTeacher().getId()))
-                .penalize(HardSoftScore.ONE_HARD)
-                .asConstraint("Lecture same teacher per division/subject");
+    // 3. DIVISION/STUDENT (same division cannot have two classes at same time)
+    private Constraint studentConflict(ConstraintFactory factory) {
+        return factory.forEach(ScheduledClass.class)
+                .join(ScheduledClass.class,
+                        org.optaplanner.core.api.score.stream.Joiners.equal(sc -> sc.getDivision().getId()),
+                        org.optaplanner.core.api.score.stream.Joiners.equal(sc -> sc.getTimeSlot().getId()),
+                        org.optaplanner.core.api.score.stream.Joiners.lessThan(ScheduledClass::getId)
+                )
+                .penalize("Student conflict", HardSoftScore.ONE_HARD);
+    }
+
+    // 4. TEACHER continuous hours limit (max 4 hours)
+    private Constraint teacherContinuousHoursLimit(ConstraintFactory factory) {
+        return factory.forEach(ScheduledClass.class)
+                .filter(sc -> sc.getTeacher() != null)
+                .groupBy(sc -> sc.getTeacher().getId(),
+                        org.optaplanner.core.api.score.stream.ConstraintCollectors.count())
+                .filter((teacherId, classCount) -> classCount > 4)
+                .penalize("Teacher continuous hours > 4",
+                        HardSoftScore.ONE_HARD,
+                        (teacherId, classCount) -> classCount - 4);
     }
 }

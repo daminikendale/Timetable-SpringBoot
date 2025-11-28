@@ -27,7 +27,7 @@ public class TimetableController {
                 new java.util.HashMap<>() {{
                     put("success", true);
                     put("semesterId", semesterId);
-                    put("classCount", solved.getPlannedClassList().size());
+                    put("classCount", solved.getScheduledClasses().size());
                     put("score", solved.getScore() != null ? solved.getScore().toString() : "N/A");
                     put("message", "Solved and saved successfully");
                 }}

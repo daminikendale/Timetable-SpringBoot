@@ -1,7 +1,6 @@
 package com.rspc.timetable.entities;
 
 import jakarta.persistence.*;
-import java.util.HashSet;
 import java.util.Set;
 
 @Entity
@@ -9,32 +8,39 @@ import java.util.Set;
 public class Teacher {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "name")
     private String name;
 
-    @Column(name = "email")
     private String email;
 
     @Column(name = "employee_id")
     private String employeeId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    // Department relation
+    @ManyToOne
     @JoinColumn(name = "department_id")
     private Department department;
 
-    // FINAL & CORRECT WAY TO MODEL UNAVAILABILITY
-    @ManyToMany(fetch = FetchType.LAZY)
+    // Subjects teacher can teach
+    @ManyToMany
+    @JoinTable(
+        name = "teacher_subject_allocation",
+        joinColumns = @JoinColumn(name = "teacher_id"),
+        inverseJoinColumns = @JoinColumn(name = "subject_id")
+    )
+    private Set<Subject> subjects;
+
+    // Unavailable timeslots
+    @ManyToMany
     @JoinTable(
         name = "teacher_unavailable_timeslots",
         joinColumns = @JoinColumn(name = "teacher_id"),
         inverseJoinColumns = @JoinColumn(name = "timeslot_id")
     )
-    private Set<TimeSlot> unavailableTimeSlots = new HashSet<>();
+    private Set<TimeSlot> unavailableTimeSlots;
 
-    // ---------------------- Getters & Setters ----------------------
+    // --- Getters and Setters ---
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -51,10 +57,11 @@ public class Teacher {
     public Department getDepartment() { return department; }
     public void setDepartment(Department department) { this.department = department; }
 
-    public Set<TimeSlot> getUnavailableTimeSlots() { return unavailableTimeSlots; }
+    public Set<Subject> getSubjects() { return subjects; }
+    public void setSubjects(Set<Subject> subjects) { this.subjects = subjects; }
 
+    public Set<TimeSlot> getUnavailableTimeSlots() { return unavailableTimeSlots; }
     public void setUnavailableTimeSlots(Set<TimeSlot> unavailableTimeSlots) {
-        this.unavailableTimeSlots = 
-            (unavailableTimeSlots == null) ? new HashSet<>() : unavailableTimeSlots;
+        this.unavailableTimeSlots = unavailableTimeSlots;
     }
 }
